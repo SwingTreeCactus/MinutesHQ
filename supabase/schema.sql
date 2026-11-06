@@ -1,4 +1,4 @@
--- Meeting Minutes & Action Tracker: database setup
+-- Minutes HQ: database setup
 -- Paste this whole file into Supabase > SQL Editor > New query and click Run.
 -- Run it once on a new project. Nothing to edit: the first person to tap
 -- "Start a group" in the app becomes that group's admin.
@@ -560,6 +560,13 @@ grant execute on function public.start_group(text, text, text), public.request_j
   public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami()
   to authenticated;
 grant execute on function public.link_items(text), public.unsubscribe(text) to anon, authenticated;
+-- Internal helpers: only signed-in people (the permission rules call them), never signed-out visitors.
+revoke all on function public.me_id(), public.my_group(), public.is_group_admin(uuid), public.jwt_email(), public.name_score(text, text) from public, anon;
+grant execute on function public.me_id(), public.my_group(), public.is_group_admin(uuid), public.jwt_email(), public.name_score(text, text) to authenticated;
+-- Trigger functions are never called directly.
+revoke all on function public.people_guard(), public.touch_updated_at() from public, anon, authenticated;
+alter function public.touch_updated_at() set search_path = public;
+alter function public.jwt_email() set search_path = public;
 
 -- ============================================================
 -- Live view: only the group's admins can join a meeting's broadcast channel ("live:<id>").
