@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EEF1F5">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Minutes HQ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Minutes HQ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/app-192.png">
+<link rel="icon" href="icons/app-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+<div class="busy" id="busy"><div><span class="spin"></span><span id="busyMsg">Working…</span></div></div>
+<input type="file" id="agendaFile" accept=".pdf,.docx,.txt,.md,image/*" hidden>
+<input type="file" id="openFile" accept=".json,application/json" hidden>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/vault.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/live.js"></script>
+<script src="js/meeting.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

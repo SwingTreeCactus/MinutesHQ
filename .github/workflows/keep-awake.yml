@@ -1,0 +1,33 @@
+# Keeps the free Supabase project from being paused for inactivity (it pauses after a quiet week).
+# Three times a week it asks the database a harmless question: look up a private link that doesn't exist.
+# It reads the project address and public key from js/config.js, so there's nothing to set up.
+# If a run fails (for example, the project was already paused), GitHub emails you.
+name: Keep database awake
+
+on:
+  schedule:
+    - cron: '17 16 * * 1,3,5'   # Mon, Wed, Fri at 16:17 UTC (8:17 AM Pacific in winter)
+  workflow_dispatch:            # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask the database a harmless question
+        run: |
+          URL=$(grep -oE "https://[A-Za-z0-9-]+\.supabase\.co" js/config.js | head -1)
+          KEY=$(sed -nE "s/.*SUPABASE_ANON_KEY: *'([^']+)'.*/\1/p" js/config.js)
+          if [ -z "$URL" ] || [ -z "$KEY" ] || echo "$URL$KEY" | grep -q 'YOUR-'; then
+            echo "js/config.js isn't filled in yet (README step 3)."; exit 1
+          fi
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$URL/rest/v1/rpc/link_items" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+            -d '{"p_token":"keep-awake"}')
+          echo "Database answered with HTTP $CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "No proper answer. If the project is paused, resume it in the Supabase dashboard."; exit 1
+          fi
