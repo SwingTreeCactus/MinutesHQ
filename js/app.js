@@ -37,6 +37,7 @@
   function gateSignIn() {
     gate('check', `<h1>Minutes HQ</h1><p>Follow-ups from your group’s meetings, in one list.</p>
       <button class="btn primary block" id="gSignIn">${googleMark()}Sign in with Google</button>`);
+    root.querySelector('.gate').insertAdjacentHTML('beforeend', `<div class="legal-links"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></div>`);
     on('gSignIn', A.signIn);
   }
   function gateMsg(title, text) {

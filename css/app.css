@@ -388,3 +388,15 @@ dialog h2{margin:0 0 16px;font-size:20px}
   .wrapup{padding:24px 16px 60px}
   .home,.ppl,.setup{padding:20px 16px 40px}
 }
+
+/* privacy and terms pages */
+.legal{max-width:680px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) 20px 60px;line-height:1.6}
+.legal .back{display:inline-flex;align-items:center;min-height:44px;color:var(--teal);font-weight:600;text-decoration:none}
+.legal h1{font-size:30px;margin:12px 0 4px;letter-spacing:-.01em}
+.legal h2{font-size:18px;margin:28px 0 6px}
+.legal p,.legal li{font-size:16px;color:var(--ink2)}
+.legal ul{padding-left:20px}
+.legal li{margin-bottom:6px}
+.legal a{color:var(--teal)}
+.legal-links{margin-top:20px;font-size:13px;color:var(--muted);text-align:center}
+.legal-links a{color:var(--muted)}

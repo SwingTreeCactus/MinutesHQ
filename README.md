@@ -147,6 +147,7 @@ They'll see "Waiting for approval" until an admin approves them.
 ```
 index.html                 The app (one address for everyone)
 my.html                    Private read-only link from reminder emails, and unsubscribe
+privacy.html, terms.html   Privacy policy and terms (linked from sign-in; Google's consent screen asks for them)
 css/app.css                Styles
 js/config.js               Your Supabase address and key (edit this)
 js/common.js               Sign-in, dates, shared helpers

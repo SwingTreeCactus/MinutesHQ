@@ -1,9 +1,9 @@
 /* Lets the app open without a connection (for example, a meeting room with no wifi).
    App files: try the network first so updates show up, fall back to the saved copy.
    Libraries from the CDN: saved copy first. Database and Anthropic calls are never cached. */
-const CACHE = 'meeting-tracker-v2';
+const CACHE = 'minutes-hq-v3';
 const SHELL = [
-  './', 'index.html', 'my.html', 'css/app.css',
+  './', 'index.html', 'my.html', 'privacy.html', 'terms.html', 'css/app.css',
   'js/config.js', 'js/common.js', 'js/icons.js', 'js/vault.js', 'js/pdf.js', 'js/live.js', 'js/meeting.js', 'js/app.js', 'js/my.js',
   'manifest.webmanifest', 'icons/app-192.png', 'icons/app-512.png'
 ];
