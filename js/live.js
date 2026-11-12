@@ -1,4 +1,4 @@
-/* Live view: other admins follow a meeting while it runs. The note-taker's tablet broadcasts the agenda
+/* Live view: other admins follow a meeting while it runs. The note-taker's device broadcasts the agenda
    and notes over a private Realtime channel; nothing is stored except the "Live now" line (meeting name
    and note-taker), which is deleted when the meeting ends. Viewers are read-only and browse freely;
    they are never shown which item the note-taker is on. */

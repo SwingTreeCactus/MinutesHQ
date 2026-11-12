@@ -5,7 +5,7 @@ Meeting minutes and follow-ups for small groups.
 One web app at one address (for example `https://hq.mygroundwork.app`), used two ways:
 
 - **Everyone** signs in with Google on their phone and sees their group's to-do list, the Decisions from the last meeting, and can post updates and check off their own items.
-- **Admins** also run meetings from a tablet (the Admin home): agenda, attendance, notes, wrap-up, PDF. Meeting notes stay encrypted on the tablet with the admin's passphrase. Only follow-ups, decisions and updates go to the shared database.
+- **Admins** also run meetings from a tablet (the Admin home): agenda, attendance, notes, wrap-up, PDF. Meeting notes stay on the admin's device, protected by its screen lock and the admin's sign-in (no passphrase). Only follow-ups, decisions and updates go to the shared database.
 
 Anyone can start a group and becomes its admin. Others join with the group's code and an admin approves them. Each person belongs to one group, and the database keeps every group's data apart.
 
@@ -126,7 +126,7 @@ They'll see "Waiting for approval" until an admin approves them.
 
 **During the meeting:** tap who's present, then work through the agenda. Each item has Notes, a Decision, and **Needs follow-up** (task, people, due date). You can jump around, reorder, add and remove items. Other admins can follow along read-only; they browse on their own and never see which item you're on. Notes reach them directly and are never stored on the server.
 
-**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). Download the PDF or save an encrypted copy.
+**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). Download the PDF or save a copy.
 
 **Next agenda (admins):** your own private scratchpad of topics for the next meeting. Check a note off once it's been raised; **Clear** removes checked-off notes.
 
@@ -135,7 +135,7 @@ They'll see "Waiting for approval" until an admin approves them.
 ## Good to know
 
 - **Offline:** once opened online, the app opens without a connection using the last sign-in, so meetings work in a room with no wifi. Follow-ups wait and go out when the tablet is back online.
-- **Shared tablet:** each admin has their own passphrase and encrypted notes on the device. The passphrase is asked when starting or continuing a meeting, and the notes lock after 15 minutes idle (never during a meeting). A forgotten passphrase can't be recovered.
+- **Shared device:** each admin's notes are kept apart by their Google sign-in. Nothing in the app locks them: anyone holding the unlocked device while you're signed in can open them, so keep a screen lock on the device. Notes saved under the old passphrase are brought over once with that passphrase (or erased with **Start fresh instead**); copies saved back then still ask for it.
 - **Removing someone:** under **People**, **Remove from app** keeps them as a name so past items keep it. A name-only person's items are closed by admins.
 - **Leaving:** **Settings → Leave group**. If you're the only one using the app in the group, you get **Delete group** instead.
 - **Calendar:** **Add to calendar** on an item creates an event titled "Action item due — open tracker", so nothing confidential shows on lock screens.
@@ -154,7 +154,7 @@ js/common.js               Sign-in, dates, shared helpers
 js/app.js                  Sign-in gates, joining, to-do list, Decisions, Next agenda, settings, people, Admin home
 js/meeting.js              Running a meeting on the tablet
 js/live.js                 Live view for other admins
-js/vault.js                Encryption for meeting notes on the tablet
+js/vault.js                Meeting notes saved on the device (and the one-time move from the old passphrase format)
 js/pdf.js                  PDF layout
 js/my.js                   Private link page
 js/icons.js                Icons

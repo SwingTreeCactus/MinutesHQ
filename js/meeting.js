@@ -1,5 +1,5 @@
-/* Running a meeting (admins, on the tablet): setup → who's here → meeting → wrap-up.
-   Notes are kept encrypted on this device with the admin's passphrase. At End meeting, follow-ups
+/* Running a meeting (admins): setup → who's here → meeting → wrap-up.
+   Notes are kept on this device (no passphrase; the device lock protects them). At End meeting, follow-ups
    go to the to-do list and decisions replace the group's Decisions list. */
 (function () {
   const A = window.App, sb = A.sb, esc = A.esc, I = window.ICON, R = window.RING, q = A.q;
@@ -8,7 +8,6 @@
   const MODELS = [['claude-sonnet-5-5', 'Sonnet 5.5 (recommended)'], ['claude-haiku-5-5', 'Haiku 5.5 (cheapest)'], ['claude-opus-5-5', 'Opus 5.5 (most capable)']];
   const MAMMOTH = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
   const JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-  const IDLE_LOCK_MIN = 15;
 
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
   const freshMeeting = () => ({ id: uid(), phase: 'setup', meta: { title: '', date: A.todayISO(), location: '', startTime: '', closingPrayer: '', confidential: false },
@@ -16,9 +15,9 @@
   const newItem = (title = '', detail = '') => ({ id: uid(), title, detail, notes: '', decision: '', followUp: false, task: '', assignees: [], due: '', openedAt: null, visited: false, kind: 'normal' });
 
   let C = null;              // context from the app: uid, me (person), group, people, offline, goHome
-  let D = null;              // decrypted data while unlocked
+  let D = null;              // this admin's saved meeting data while the meeting screens are open
   let active = false, intent = 'continue';
-  let syncing = false, lastInput = Date.now(), pendingFile = null;
+  let syncing = false, pendingFile = null;
 
   /* ---------- storage ---------- */
   const markerKey = () => 'mm_active:' + C.uid;
@@ -30,16 +29,17 @@
   let saveT;
   function save() {
     clearTimeout(saveT);
-    saveT = setTimeout(() => Vault.save(D).catch(e => A.toast(e.message)), 350);
+    saveT = setTimeout(store, 350);
     writeMarker();
     if (D.meeting.phase === 'meeting') Live.push(snapshot());
   }
-  function saveNow() { clearTimeout(saveT); writeMarker(); return Vault.save(D).catch(e => A.toast(e.message)); }
+  function store() { if (!D) return; try { Vault.save(D); } catch (e) { A.toast(e.message); } }
+  function saveNow() { clearTimeout(saveT); writeMarker(); store(); return Promise.resolve(); }
   const M = () => D.meeting;
   const cur = () => M().items[M().cur];
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
 
-  /* ---------- people (cached in the vault so meetings work offline) ---------- */
+  /* ---------- people (saved on the device so meetings work offline) ---------- */
   const people = () => (D.cache.people || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const personName = id => ((D.cache.people || []).find(m => m.id === id) || {}).name || 'Former member';
   const online = () => !C.offline && navigator.onLine && !!sb;
@@ -50,62 +50,59 @@
 
   /* ---------- entry and exit ---------- */
   function open(ctx) {
-    C = ctx; active = true; lastInput = Date.now();
+    C = ctx; active = true;
     A.loadScript(JSPDF).catch(() => {});      // keep the PDF tool cached for offline meetings
     if (D) return render();
-    if (!document.getElementById('lockForm')) renderLock();   // never wipe a passphrase being typed
+    if (document.getElementById('lockForm')) return;   // never wipe an old passphrase being typed
+    D = Vault.load();
+    if (D) return afterLoad();
+    if (Vault.legacy()) return renderLegacy();
+    D = blank(); afterLoad();
   }
+  const blank = () => ({ v: 3, settings: { apiKey: '', model: MODELS[0][0] }, cache: { people: [] }, meeting: freshMeeting() });
   function close() {
     if (!active) return;
     active = false; dlg.open && dlg.close();
     if (D) { if (D.meeting.phase === 'meeting') Live.pause(); saveNow(); }
-    Vault.lock(); D = null; pendingFile = null; keepAwake(false); unbusy();
+    D = null; pendingFile = null; keepAwake(false); unbusy();
   }
   function marker(u) { try { return JSON.parse(localStorage.getItem('mm_active:' + u)); } catch (e) { return null; } }
 
-  /* ---------- passphrase ---------- */
-  function renderLock(err) {
-    const first = !Vault.exists();
+  /* ---------- notes saved with the old passphrase (one time) ---------- */
+  function renderLegacy(err) {
     root.innerHTML = `<div class="gate"><form class="card" id="lockForm" autocomplete="off">
       <div class="badge">${I('lock', 'i', 28)}</div>
-      <h1>${first ? 'Set a passphrase' : 'Meeting notes'}</h1>
-      <p>${first ? 'Your meeting notes are encrypted on this tablet with this passphrase. If you forget it, the notes can’t be recovered.' : 'Enter your passphrase'}</p>
-      <label class="sr" for="pw1">Passphrase</label><input class="input" type="password" id="pw1" autocomplete="${first ? 'new-password' : 'current-password'}" placeholder="Passphrase" required minlength="${first ? 8 : 1}">
-      ${first ? '<label class="sr" for="pw2">Repeat passphrase</label><input class="input" type="password" id="pw2" autocomplete="new-password" placeholder="Repeat passphrase" required>' : ''}
+      <h1>Meeting notes</h1>
+      <p>Meeting notes no longer need a passphrase. Enter your old one once to bring over the notes saved on this device.</p>
+      <label class="sr" for="pw1">Old passphrase</label><input class="input" type="password" id="pw1" autocomplete="current-password" placeholder="Old passphrase" required>
       <div class="err" id="lockErr">${esc(err || '')}</div>
-      <button class="btn primary block" type="submit">${first ? 'Create' : 'Unlock'}</button>
+      <button class="btn primary block" type="submit">Bring over notes</button>
+      <button class="btn ghost block" type="button" id="lockFresh" style="color:var(--muted)">Start fresh instead</button>
       <button class="btn ghost block" type="button" id="lockBack" style="color:var(--muted)">Back to home</button>
     </form></div>`;
-    const f = document.getElementById('lockForm');
     setTimeout(() => { const p = document.getElementById('pw1'); if (p) p.focus(); }, 50);
     on('lockBack', () => C.goHome());
-    f.onsubmit = async e => {
+    on('lockFresh', () => {
+      if (!confirm('Start fresh? The notes saved with your old passphrase are erased from this device. Items already in the to-do list stay there.')) return;
+      Vault.dropLegacy(); D = blank(); afterLoad();
+    });
+    document.getElementById('lockForm').onsubmit = async e => {
       e.preventDefault();
-      const p1 = document.getElementById('pw1').value;
+      busy('Bringing over your notes…');
       try {
-        if (first) {
-          const p2 = document.getElementById('pw2').value;
-          if (p1.length < 8) return renderLock('Use at least 8 characters.');
-          if (p1 !== p2) return renderLock('The two entries don’t match.');
-          busy('Setting up…');
-          D = await Vault.create(p1, { v: 2, settings: { apiKey: '', model: MODELS[0][0] }, cache: { people: [] }, meeting: freshMeeting() });
-        } else {
-          busy('Unlocking…');
-          D = await Vault.unlock(p1);
-        }
+        const data = await Vault.unlockLegacy(document.getElementById('pw1').value);
         unbusy();
-        if (!active) { Vault.lock(); D = null; return; }
-        afterUnlock();
-      } catch (ex) { unbusy(); renderLock(ex.message); }
+        if (!active) return;
+        D = data; afterLoad();
+      } catch (ex) { unbusy(); renderLegacy(ex.message); }
     };
   }
-  function afterUnlock() {
-    lastInput = Date.now();
+  function afterLoad() {
     if (!C.offline) D.cache = { people: C.people.map(p => ({ id: p.id, name: p.name })), at: new Date().toISOString() };
     const m = M();
     const empty = m.phase === 'setup' && !m.items.length && !m.meta.title;
     if (intent === 'new' && m.phase === 'done') {
-      if (m.exported || confirm('Start a new meeting? The last meeting’s notes are cleared from this tablet. If you still need them, cancel and download the PDF or save a copy first.')) {
+      if (m.exported || confirm('Start a new meeting? The last meeting’s notes are cleared from this device. If you still need them, cancel and download the PDF or save a copy first.')) {
         D.meeting = freshMeeting(); D.agendaDraft = '';
       }
     } else if (intent === 'new' && empty) { D.meeting = freshMeeting(); }
@@ -117,15 +114,13 @@
 
   setInterval(() => {
     if (!active || !D) return;
-    if (M().phase !== 'meeting' && Date.now() - lastInput > IDLE_LOCK_MIN * 60000) { close(); C.goHome(); return; }
     const el = document.getElementById('elapsed'); if (el) el.textContent = elapsed();
   }, 30000);
-  ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true }));
 
   /* ---------- top-level render ---------- */
   function render() {
     if (!active) return;
-    if (!D) return renderLock();
+    if (!D) return;
     const p = M().phase;
     keepAwake(p === 'meeting');
     if (p === 'attendance') renderAttendance();
@@ -168,7 +163,7 @@
               <div><label class="label" for="mPrayer">Closing prayer</label><input class="input" id="mPrayer" data-meta="closingPrayer" value="${esc(meta.closingPrayer || '')}" placeholder="Brother…"></div>
             </div>
             <button class="switch" role="switch" id="confSw" aria-checked="${meta.confidential}"><span class="track"></span>Confidential</button>
-            <p class="note-s" style="margin-top:4px">Keeps this meeting’s agenda and notes on this tablet only. Follow-ups and decisions still go to the group.</p>
+            <p class="note-s" style="margin-top:4px">Keeps this meeting’s agenda and notes on this device only. Follow-ups and decisions still go to the group.</p>
           </section>
         </div>
         <section class="card">
@@ -279,7 +274,7 @@
     const n = f.name.toLowerCase();
     try {
       if (f.type === 'application/pdf' || n.endsWith('.pdf') || f.type.startsWith('image/')) {
-        if (M().meta.confidential) return A.toast('Confidential meetings stay on the tablet, so PDFs and photos can’t be read. Paste the text instead.');
+        if (M().meta.confidential) return A.toast('Confidential meetings stay on this device, so PDFs and photos can’t be read. Paste the text instead.');
         if (!D.settings.apiKey) return A.toast('To read PDFs and photos, add your Anthropic key in Settings. Or paste the text.');
         pendingFile = f.type.startsWith('image/')
           ? { name: f.name, block: { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: await shrinkImage(f) } } }
@@ -622,7 +617,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
           <div><label class="label" for="wPrayer">Closing prayer by</label><input class="input" id="wPrayer" value="${esc(m.meta.closingPrayer || '')}" placeholder="Brother…"></div>
           <button class="btn primary block" id="pdf">${I('download')}Download PDF</button>
           ${smart() ? `<button class="btn soft block" id="pdfAI">${I('download')}Polished minutes PDF</button>` : ''}
-          <button class="btn block" id="saveFile">${I('save')}Save encrypted copy</button>
+          <button class="btn block" id="saveFile">${I('save')}Save a copy</button>
           <button class="btn ghost danger block" id="newMtg">Start a new meeting</button></section>
       </div></div>`;
     const wp = document.getElementById('wPrayer'); wp.oninput = () => { m.meta.closingPrayer = wp.value; save(); };
@@ -633,7 +628,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     on('pdfAI', () => exportPDF(true));
     on('saveFile', saveMeetingFile);
     on('newMtg', async () => {
-      if (!m.exported && !confirm('Start a new meeting? This clears the current one from the tablet. Download the PDF or save a copy first if you need it.')) return;
+      if (!m.exported && !confirm('Start a new meeting? This clears the current one from this device. Download the PDF or save a copy first if you need it.')) return;
       D.meeting = freshMeeting(); D.agendaDraft = ''; pendingFile = null; await saveNow(); render(); window.scrollTo(0, 0);
     });
     root.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { const it = m.items.find(x => x.id === b.dataset.pick); pickPeople(it.assignees, ids => { it.assignees = ids; save(); syncTracker(); }); });
@@ -669,10 +664,10 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
     A.shareOrDownload(window.buildMinutesPDF(model).output('blob'), name, 'application/pdf');
   }
 
-  /* ---------- encrypted meeting files ---------- */
+  /* ---------- meeting files ---------- */
   async function saveMeetingFile() {
     const m = M();
-    const box = await Vault.exportFile({ meeting: m, cache: D.cache });
+    const box = Vault.exportFile({ meeting: m, cache: D.cache });
     const name = ((m.meta.date || A.todayISO()) + ' ' + (m.meta.title || 'meeting')).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '.minutes.json';
     m.exported = true; save();
     A.shareOrDownload(new Blob([JSON.stringify(box)], { type: 'application/json' }), name, 'application/json');
@@ -685,7 +680,7 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
       try { data = await Vault.importFile(box); }
       catch (err) {
         if (err.message !== 'needpass') throw err;
-        const pass = prompt('This file was saved with a different passphrase. Enter it:'); if (!pass) return;
+        const pass = prompt('This copy was saved with a passphrase. Enter it:'); if (!pass) return;
         data = await Vault.importFile(box, pass);
       }
       if (!data || !data.meeting) throw new Error('That isn’t a meeting file');
@@ -704,16 +699,16 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
   function settingsDialog() {
     dlg.innerHTML = `<h2>Settings</h2>
       <div class="field"><label class="label" for="sKey">Anthropic key</label><input class="input" id="sKey" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(D.settings.apiKey)}">
-        <p class="note-s">Stored encrypted on this tablet. Lets Read agenda handle PDFs and photos, and adds Polished minutes PDF. Optional.</p></div>
+        <p class="note-s">Saved on this device. Lets Read agenda handle PDFs and photos, and adds Polished minutes PDF. Optional.</p></div>
       <div class="field"><label class="label" for="sModel">Model</label><select class="select" id="sModel">${MODELS.map(([v, l]) => `<option value="${v}" ${v === D.settings.model ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="dlg-actions" style="justify-content:space-between"><button class="btn ghost danger" id="sWipe">Erase meeting notes on this tablet</button><span class="row"><button class="btn" id="sCancel">Cancel</button><button class="btn primary" id="sSave">Save</button></span></div>`;
+      <div class="dlg-actions" style="justify-content:space-between"><button class="btn ghost danger" id="sWipe">Erase meeting notes on this device</button><span class="row"><button class="btn" id="sCancel">Cancel</button><button class="btn primary" id="sSave">Save</button></span></div>`;
     dlg.showModal();
     on('sCancel', () => dlg.close());
     on('sSave', () => { D.settings.apiKey = document.getElementById('sKey').value.trim(); D.settings.model = document.getElementById('sModel').value; save(); dlg.close(); render(); A.toast('Saved'); });
     on('sWipe', () => {
-      if (!confirm('Erase your meeting notes, settings and passphrase from this tablet? Items already in the to-do list stay there.')) return;
+      if (!confirm('Erase your meeting notes and settings from this device? Items already in the to-do list stay there.')) return;
       Vault.erase(); try { localStorage.removeItem(markerKey()); } catch (e) {}
-      D = null; dlg.close(); renderLock();
+      D = blank(); store(); dlg.close(); render();
     });
   }
 
@@ -726,7 +721,7 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
     } catch (e) {}
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && active && D) saveNow();   // the tablet may close the app in the background
+    if (document.visibilityState === 'hidden' && active && D) saveNow();   // the device may close the app in the background
     if (document.visibilityState === 'visible' && active && D && M().phase === 'meeting') keepAwake(true);
   });
   window.addEventListener('pagehide', () => { if (active && D) saveNow(); });

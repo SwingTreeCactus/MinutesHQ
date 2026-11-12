@@ -2,11 +2,12 @@
 
 Read this first in a new chat. It records what was built, why, and every decision Mark made, so work can continue without re-asking.
 
-## Status (Nov 5, 2026)
+## Status (Nov 12, 2026)
 
 - **Rebuild done (Nov 5).** Self-service groups, join with code + approval, one address with the Admin home, the meeting flow moved under it, Decisions list, Next agenda notes, live view, reminder emails with private links, and the design-review fixes are all built. **Live as of Nov 6** (see Deployed below). Not yet tested with real Realtime between two devices, Resend, or on an iPad (admins on iPad must run meetings from the Home Screen icon so Safari doesn't clear stored notes).
 - **Tests:** SQL permission tests against Postgres 16 with a stubbed Supabase (`meeting-tracker-tests/sql/`, 62 checks) and headless-browser tests against the fake backend (6 files, 120 checks). All pass.
 - **Hosting:** https://hq.mygroundwork.app (Cloudflare DNS for mygroundwork.app; CNAME `hq` → `USERNAME.github.io`, DNS only). Email sends from `notify.mygroundwork.app` (its own subdomain, so it doesn't clash with Groundwork's email records).
+- **Nov 12:** passphrase removed (see Decisions); on-screen wording says "device", not "tablet". Pushed to GitHub directly from the chat (the session can push to `SwingTreeCactus/MinutesHQ`). Browser tests updated: 6 files, 130 checks, all pass (SQL unchanged). Supabase check: project healthy, `notify` not deployed yet.
 - Source of truth for code: the `meeting-tracker/` files in this project.
 - **Name (Mark, Nov 5): "Minutes HQ"** — page title, Home Screen label, install name, sign-in screen, share text and email sender. Address stays hq.mygroundwork.app. The to-do list keeps its "Action items" heading. Repository: `SwingTreeCactus/MinutesHQ` (public), app files at its root plus a `CNAME` file for hq.mygroundwork.app; first push Nov 5. The test suite stays in this project, not the repo.
 - **Deployed (Nov 6): Mark reports everything working** at https://hq.mygroundwork.app: GitHub Pages + Cloudflare CNAME, Supabase project **Minutes HQ** (ref `sfchrfuahaqypxelefvg`, us-west-1, free, org MShahan) with `schema.sql` and helper tightening applied, `js/config.js` filled in, Google sign-in (OAuth app "Minutes HQ" published, redirect via Supabase), Auth URL configuration, Realtime on. Not yet done: email reminders (Resend, deploy `notify`, secrets, cron) — optional; confirm Realtime "Allow public access to channels" is off; first manual run of the keep-awake workflow; checks on a real iPad and of the live view between two admins.
@@ -33,7 +34,7 @@ Read this first in a new chat. It records what was built, why, and every decisio
 ## What it is
 
 - **index.html** — the one app for everyone (phones and the Galaxy Tab). Google sign-in via Supabase. Not in a group yet → Join (code + full name) or Start a group; waiting → "Waiting for approval". Members: To-do | Decisions. Admins: To-do | Decisions | Next agenda, People and join requests, and on the tablet the Admin home with Start/Continue a meeting and Live now.
-- **Meeting flow** (`js/meeting.js`) — setup → attendance → meeting → wrap-up, admins only. Notes encrypted in localStorage per signed-in admin (`mm_vault_v2:<user id>`; PBKDF2-SHA256 310k → AES-256-GCM, `js/vault.js`). Passphrase asked when starting/continuing a meeting; going back home locks it; 15-min idle lock outside meetings. Encrypted meeting files can be saved/shared and reopened. Saves immediately at End meeting and when the app goes to the background.
+- **Meeting flow** (`js/meeting.js`) — setup → attendance → meeting → wrap-up, admins only. Notes saved in localStorage per signed-in admin (`mm_notes_v1:<user id>`, `js/vault.js`), **no passphrase and no app lock**: the device screen lock and Google sign-in protect them. Notes left in the old encrypted format (`mm_vault_v2:<user id>`) are brought over once with the old passphrase, or erased with "Start fresh instead". "Save a copy" writes a plain meeting file; copies saved before Nov 12 are encrypted and still open when their passphrase is entered. Saves at every change, at End meeting and when the app goes to the background.
 - **Live view** (`js/live.js`) — note-taker broadcasts agenda + notes on a private Supabase Realtime channel `live:<id>`; `live_meetings` stores only meeting name + note-taker name + timestamps; heartbeat every 60 s; cards older than 10 min hidden.
 - **Backend** — Supabase. `supabase/schema.sql`: groups (code, time zone), people (app users and name-only), person_private (email, reminders, unsubscribe token; admins + self only), join_requests, items, item_assignees, item_updates, decision_lists, agenda_notes, live_meetings, link_tokens (hashed), reminder_sends; RPCs whoami, start_group, request_join (email/fuzzy name match), cancel_request, approve_join, remove_member, leave_group, delete_group, new_group_code, set_item_status, publish_decisions, reset_link, link_items (anon), unsubscribe (anon); Realtime policies. No admin seeded.
 - **Email** — `supabase/functions/notify/index.ts` (Edge Function, JWT verification off): hourly cron with a secret → 7 AM local reminders + join emails; app call after a join request; one-click unsubscribe POST. Resend free tier.
@@ -82,7 +83,7 @@ Live view
 - "Live now" stores only meeting name + note-taker name while live, deleted at end.
 
 One address and the Admin home
-- One address for everything; no separate minutes.html. Admins land on the **Admin home**: group name, People (+ request count), account; **Start a meeting** as the single primary action ("Continue … meeting" when one is underway on this device); **Live now** card → Follow along; right side To-do | Next agenda (+ Decisions). Members never see meeting controls. Passphrase asked only when starting/continuing a meeting.
+- One address for everything; no separate minutes.html. Admins land on the **Admin home**: group name, People (+ request count), account; **Start a meeting** as the single primary action ("Continue … meeting" when one is underway on this device); **Live now** card → Follow along; right side To-do | Next agenda (+ Decisions). Members never see meeting controls.
 - **Meeting setup screen**: reached from Start a meeting (back returns home). Left: Agenda card (paste / Load file or photo with removable chip / Read agenda) above the Meeting card (name, date, start time, location, closing prayer, Confidential). Right: Items list (reorder, remove, Add item, tap to edit; Open action items as live item 2). One primary action: Next: who's here. No group picker. Open-file and Settings icons in the header.
 
 Reminders and private links
@@ -94,9 +95,13 @@ Reminders and private links
 PDF
 - No PDF password. Header: **Start** time from the agenda (falls back to when Start agenda was tapped). End time = tablet clock at End meeting, labeled **"Closing prayer"**, followed by the **closing-prayer brother's name** from the agenda, editable on setup and wrap-up. **No per-item times.** Present list in header; follow-ups table at the end; footer with page numbers.
 
+Meeting notes on the device
+- **No passphrase** (Mark, Nov 12): rely on the device's screen lock and Google sign-in. Chosen over a fingerprint/face/PIN passkey (WebAuthn PRF), which was offered and turned down. Accepted cost: anyone holding the unlocked device while an admin is signed in can open that admin's notes. Notes stay separate per signed-in admin.
+
 Wording
+- **Say "device", never "tablet"** in the UI (Mark, Nov 12): the app shouldn't assume what the admin is using.
 - **Never mention "AI"** anywhere in the UI. Buttons: "Read agenda" (smart when key set + not confidential + online; otherwise line-by-line, silently falls back) and "Polished minutes PDF" (shown only when available). Settings label: "Anthropic key".
-- **Confidential** switch: keeps that meeting's agenda and notes on the tablet only (no outside processing). Follow-ups and decisions still go to the group.
+- **Confidential** switch: keeps that meeting's agenda and notes on the device only (no outside processing). Follow-ups and decisions still go to the group.
 
 Look (approved)
 - Light: background #EEF1F5, white cards with soft shadows, one accent teal #0F766E (soft #E6F2F0), amber #9A4A0B for needs-attention, Plus Jakarta Sans. Rings: done = filled teal check, current = teal ring+dot, upcoming = gray ring.
@@ -119,6 +124,7 @@ Hosting and security posture
 ## Known limitations
 
 - Supabase free plan pauses after a quiet week; the keep-awake workflow prevents it. GitHub disables scheduled workflows after 60 days without commits in a public repo (emails first; re-enable in Actions). If paused anyway: Resume in the dashboard; while paused the app shows "Couldn't load".
+- Meeting notes have no app-level lock; keep a screen lock on any device used for meetings. Saved copies are plain files now.
 - iPhone: members must sign in from the home-screen app, not Safari.
 - Signing in leaves the page (Google); the app returns signed in.
 - The meeting flow uses the people list saved in the admin's vault when offline; it refreshes whenever the app opens online.

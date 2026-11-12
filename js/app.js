@@ -234,8 +234,7 @@
         <div class="home-l">
           <section class="card meet-card"><h2>Meetings</h2>
             <button class="btn primary lg" id="startMtg">${label}</button>
-            ${mk && mk.phase === 'done' ? `<button class="btn link" id="lastWrap" style="align-self:flex-start;padding:0">Last meeting’s wrap-up</button>` : ''}
-            <span class="note-s">Your passphrase is asked when you start, to keep the notes encrypted on this tablet.</span></section>
+            ${mk && mk.phase === 'done' ? `<button class="btn link" id="lastWrap" style="align-self:flex-start;padding:0">Last meeting’s wrap-up</button>` : ''}</section>
           ${lv.map(l => `<section class="live-big"><span class="live-dot" style="font-size:13px">Live now</span>
             <div><div class="nm">${esc(l.meeting_title)}</div><div class="by">${esc(l.taker_name)} taking notes · started ${esc(A.fmtTime(l.started_at))}</div></div>
             <a class="btn" href="#live/${l.id}">Follow along</a></section>`).join('')}

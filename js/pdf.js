@@ -1,4 +1,4 @@
-/* Builds the minutes PDF on the tablet with jsPDF. Nothing leaves the device here. */
+/* Builds the minutes PDF on the device with jsPDF. Nothing leaves the device here. */
 window.buildMinutesPDF = function (m) {
   const A = window.App;
   const { jsPDF } = window.jspdf;
