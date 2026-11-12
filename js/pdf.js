@@ -22,7 +22,11 @@ window.buildMinutesPDF = function (m) {
   const start = m.meta.startTime ? A.fmtClock(m.meta.startTime) : (m.startedAt ? A.fmtTime(m.startedAt) : '');
   const who = (m.meta.closingPrayer || '').trim();
   const close = m.endedAt ? 'Closing prayer ' + A.fmtTime(m.endedAt) + (who ? ' — ' + who : '') : (who ? 'Closing prayer — ' + who : '');
-  text([start && 'Start ' + start, close].filter(Boolean).join('  ·  '), { size: 10, color: MUTE, gap: 8 });
+  const opener = (m.meta.openingPrayer || '').trim();
+  if (opener) {
+    text([start && 'Start ' + start, 'Opening prayer — ' + opener].filter(Boolean).join('  ·  '), { size: 10, color: MUTE, gap: 1 });
+    text(close, { size: 10, color: MUTE, gap: 8 });
+  } else text([start && 'Start ' + start, close].filter(Boolean).join('  ·  '), { size: 10, color: MUTE, gap: 8 });
   if (m.present && m.present.length) text('Present: ' + m.present.join(', '), { size: 10, gap: 2 });
   y += 6; rule(ACC, 1.5); y += 16;
 

@@ -7,7 +7,7 @@ Read this first in a new chat. It records what was built, why, and every decisio
 - **Rebuild done (Nov 5).** Self-service groups, join with code + approval, one address with the Admin home, the meeting flow moved under it, Decisions list, Next agenda notes, live view, reminder emails with private links, and the design-review fixes are all built. **Live as of Nov 6** (see Deployed below). Not yet tested with real Realtime between two devices, Resend, or on an iPad (admins on iPad must run meetings from the Home Screen icon so Safari doesn't clear stored notes).
 - **Tests:** SQL permission tests against Postgres 16 with a stubbed Supabase (`meeting-tracker-tests/sql/`, 62 checks) and headless-browser tests against the fake backend (6 files, 120 checks). All pass.
 - **Hosting:** https://hq.mygroundwork.app (Cloudflare DNS for mygroundwork.app; CNAME `hq` → `USERNAME.github.io`, DNS only). Email sends from `notify.mygroundwork.app` (its own subdomain, so it doesn't clash with Groundwork's email records).
-- **Nov 12:** passphrase removed (see Decisions); on-screen wording says "device", not "tablet". Pushed to GitHub directly from the chat (the session can push to `SwingTreeCactus/MinutesHQ`). Browser tests updated: 6 files, 130 checks, all pass (SQL unchanged). Supabase check: project healthy, `notify` not deployed yet.
+- **Nov 12:** passphrase removed (see Decisions); on-screen wording says "device", not "tablet". Pushed to GitHub directly from the chat (the session can push to `SwingTreeCactus/MinutesHQ`). Later the same day: opening-prayer brother, no prayer names on the wrap-up, Add name on Who's here. Browser tests: 6 files, 139 checks, all pass (SQL unchanged). Supabase check: project healthy, `notify` not deployed yet.
 - Source of truth for code: the `meeting-tracker/` files in this project.
 - **Name (Mark, Nov 5): "Minutes HQ"** — page title, Home Screen label, install name, sign-in screen, share text and email sender. Address stays hq.mygroundwork.app. The to-do list keeps its "Action items" heading. Repository: `SwingTreeCactus/MinutesHQ` (public), app files at its root plus a `CNAME` file for hq.mygroundwork.app; first push Nov 5. The test suite stays in this project, not the repo.
 - **Deployed (Nov 6): Mark reports everything working** at https://hq.mygroundwork.app: GitHub Pages + Cloudflare CNAME, Supabase project **Minutes HQ** (ref `sfchrfuahaqypxelefvg`, us-west-1, free, org MShahan) with `schema.sql` and helper tightening applied, `js/config.js` filled in, Google sign-in (OAuth app "Minutes HQ" published, redirect via Supabase), Auth URL configuration, Realtime on. Not yet done: email reminders (Resend, deploy `notify`, secrets, cron) — optional; confirm Realtime "Allow public access to channels" is off; first manual run of the keep-awake workflow; checks on a real iPad and of the live view between two admins.
@@ -66,6 +66,7 @@ Groups and people
 
 Attendance
 - Tap who's **present** only. Not tapped = absent, and absence is **not recorded**. No "Late". **No guests.** No quorum.
+- **Add name on Who's here** (Mark, Nov 12): adds the person to the group's list (same as People → Add name) and marks them present; an existing name (any capitalization) is just marked present. Needs a connection. Removing people stays under People only (not on the attendance screen).
 
 Tracker permissions
 - Everyone in the group sees all its items. Anyone can add updates to any item.
@@ -93,7 +94,7 @@ Reminders and private links
 - **Expiring private link** (Mark likes it): each reminder carries a fresh long random link to a no-login, **read-only** page of only that person's open items (title, due date, source meeting, latest update). No notes, nothing about others. Check-off and updates need the app. Expires 30 days after sending; admin can reset from People.
 
 PDF
-- No PDF password. Header: **Start** time from the agenda (falls back to when Start agenda was tapped). End time = tablet clock at End meeting, labeled **"Closing prayer"**, followed by the **closing-prayer brother's name** from the agenda, editable on setup and wrap-up. **No per-item times.** Present list in header; follow-ups table at the end; footer with page numbers.
+- No PDF password. Header: **Start** time from the agenda (falls back to when Start agenda was tapped). End time = tablet clock at End meeting, labeled **"Closing prayer"**, followed by the **closing-prayer brother's name** from the agenda. **Opening-prayer brother** (Mark, Nov 12) also pulled from the agenda ("Opening prayer …" or "Invocation …"), printed after the start time; no time recorded for it. Both names are edited on setup only: **the wrap-up shows no prayer names** (Mark, Nov 12). **No per-item times.** Present list in header; follow-ups table at the end; footer with page numbers.
 
 Meeting notes on the device
 - **No passphrase** (Mark, Nov 12): rely on the device's screen lock and Google sign-in. Chosen over a fingerprint/face/PIN passkey (WebAuthn PRF), which was offered and turned down. Accepted cost: anyone holding the unlocked device while an admin is signed in can open that admin's notes. Notes stay separate per signed-in admin.
@@ -116,7 +117,6 @@ Hosting and security posture
 - Let admins run a meeting when the database can't be reached (paused or down), not only when the tablet is offline; follow-ups would send once it's back. Offered Nov 5; Mark chose only the keep-awake job for now.
 - What a viewer sees when the meeting ends (built for now as a "The meeting ended." toast and back to home; proposed: a short "Meeting ended" screen; the notes disappear with it since they're never stored).
 - Let members follow a live meeting too.
-- Pull the **opening-prayer** brother from the agenda too.
 - PDF extras: organization name/logo, "Absent" line (note: absence isn't recorded), signature/approval block, A4, app font/teal accent.
 - Making the closing-prayer time editable.
 - Rewrite the setup guide doc to match the new README.

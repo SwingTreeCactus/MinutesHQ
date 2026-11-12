@@ -287,6 +287,7 @@ dialog h2{margin:0 0 16px;font-size:20px}
 .person[aria-pressed="true"]{border-color:var(--teal);background:var(--teal-soft);color:var(--ink);font-weight:600}
 .person[aria-pressed="true"] .avatar{background:var(--teal);color:#fff}
 .person .ck{opacity:0;color:var(--teal)}
+.person.add-p{border-style:dashed;border-color:var(--teal);color:var(--teal);font-weight:600;justify-content:center;gap:8px}
 .person[aria-pressed="true"] .ck{opacity:1}
 
 /* meeting (and the read-only live view) */

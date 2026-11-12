@@ -10,7 +10,7 @@
   const JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
-  const freshMeeting = () => ({ id: uid(), phase: 'setup', meta: { title: '', date: A.todayISO(), location: '', startTime: '', closingPrayer: '', confidential: false },
+  const freshMeeting = () => ({ id: uid(), phase: 'setup', meta: { title: '', date: A.todayISO(), location: '', startTime: '', openingPrayer: '', closingPrayer: '', confidential: false },
     present: [], items: [], cur: 0, startedAt: null, endedAt: null, sync: {}, exported: false });
   const newItem = (title = '', detail = '') => ({ id: uid(), title, detail, notes: '', decision: '', followUp: false, task: '', assignees: [], due: '', openedAt: null, visited: false, kind: 'normal' });
 
@@ -159,9 +159,10 @@
             <div class="grid2 field">
               <div><label class="label" for="mDate">Date</label><input class="input" type="date" id="mDate" data-meta="date" value="${esc(meta.date)}"></div>
               <div><label class="label" for="mStart">Start time</label><input class="input" type="time" id="mStart" data-meta="startTime" value="${esc(meta.startTime || '')}"></div>
-              <div><label class="label" for="mLoc">Location</label><input class="input" id="mLoc" data-meta="location" value="${esc(meta.location)}" placeholder="Optional"></div>
+              <div><label class="label" for="mOpen">Opening prayer</label><input class="input" id="mOpen" data-meta="openingPrayer" value="${esc(meta.openingPrayer || '')}" placeholder="Brother…"></div>
               <div><label class="label" for="mPrayer">Closing prayer</label><input class="input" id="mPrayer" data-meta="closingPrayer" value="${esc(meta.closingPrayer || '')}" placeholder="Brother…"></div>
             </div>
+            <div class="field"><label class="label" for="mLoc">Location</label><input class="input" id="mLoc" data-meta="location" value="${esc(meta.location)}" placeholder="Optional"></div>
             <button class="switch" role="switch" id="confSw" aria-checked="${meta.confidential}"><span class="track"></span>Confidential</button>
             <p class="note-s" style="margin-top:4px">Keeps this meeting’s agenda and notes on this device only. Follow-ups and decisions still go to the group.</p>
           </section>
@@ -227,9 +228,13 @@
     m = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(text);
     return m ? m[1].padStart(2, '0') + ':' + m[2] : '';
   }
-  /* "Closing prayer: Brother Smith", "Closing prayer – Bro. Smith", "Closing prayer by Brother Smith" */
-  function findClosingPrayer(text) {
-    const m = /closing[^\S\n]+prayer[^\S\n]*(?:[:\-–—][^\S\n]*)?(?:by[^\S\n]+)?([^\n]*)/i.exec(text);
+  /* "Closing prayer: Brother Smith", "Closing prayer – Bro. Smith", "Closing prayer by Brother Smith";
+     the same for "Opening prayer" (or "Invocation"). */
+  const prayerRe = word => new RegExp('(?:' + word + ')[^\\S\\n]*(?:[:\\-–—][^\\S\\n]*)?(?:by[^\\S\\n]+)?([^\\n]*)', 'i');
+  const findClosingPrayer = text => findPrayer(text, prayerRe('closing[^\\S\\n]+prayer'));
+  const findOpeningPrayer = text => findPrayer(text, prayerRe('opening[^\\S\\n]+prayer|invocation'));
+  function findPrayer(text, re) {
+    const m = re.exec(text);
     if (!m) return '';
     return m[1].replace(/[^\S\n]*[-–—(]?[^\S\n]*\d{1,2}(:\d{2})?[^\S\n]*([ap]\.?[^\S\n]*m\.?)?\)?[^\S\n]*$/i, '').replace(/[.;,:\-–—]+$/, '').trim();
   }
@@ -244,7 +249,7 @@
       if (isSub && out.length) out[out.length - 1].detail += (out[out.length - 1].detail ? '\n' : '') + clean;
       else out.push({ title: clean, detail: '' });
     });
-    applyAgenda(out, { startTime: findTime(all), closingPrayer: findClosingPrayer(all) });
+    applyAgenda(out, { startTime: findTime(all), openingPrayer: findOpeningPrayer(all), closingPrayer: findClosingPrayer(all) });
   }
   function applyAgenda(list, meta = {}) {
     list = (list || []).filter(x => x && String(x.title || '').trim());
@@ -259,6 +264,7 @@
     if (!m.meta.title && meta.title) m.meta.title = meta.title;
     if (!m.meta.location && meta.location) m.meta.location = meta.location;
     if (meta.startTime && /^\d{2}:\d{2}$/.test(meta.startTime)) m.meta.startTime = meta.startTime;
+    if (meta.openingPrayer) m.meta.openingPrayer = String(meta.openingPrayer).trim();
     if (meta.closingPrayer) m.meta.closingPrayer = String(meta.closingPrayer).trim();
     if (meta.date && /^\d{4}-\d{2}-\d{2}$/.test(meta.date) && m.meta.date === A.todayISO()) m.meta.date = meta.date;
     save(); renderSetup(); A.toast(list.length + ' items loaded. Check them on the right.');
@@ -312,14 +318,14 @@
     const txt = (document.getElementById('agText').value || '').trim();
     const content = []; if (pendingFile) content.push(pendingFile.block);
     content.push({ type: 'text', text: `Extract the agenda items in order. Return JSON only, in this shape:
-{"title":"meeting name or empty","date":"YYYY-MM-DD or empty","location":"or empty","startTime":"meeting start time as 24-hour HH:MM, or empty","closingPrayer":"name of whoever gives the closing prayer, exactly as written (e.g. Brother Smith), or empty","items":[{"title":"short item title","detail":"presenter, sub-points, or supporting info; empty if none"}]}
+{"title":"meeting name or empty","date":"YYYY-MM-DD or empty","location":"or empty","startTime":"meeting start time as 24-hour HH:MM, or empty","openingPrayer":"name of whoever gives the opening prayer or invocation, exactly as written (e.g. Brother Ruiz), or empty","closingPrayer":"name of whoever gives the closing prayer, exactly as written (e.g. Brother Smith), or empty","items":[{"title":"short item title","detail":"presenter, sub-points, or supporting info; empty if none"}]}
 Rules: one entry per top-level agenda item; fold sub-items into "detail" (use line breaks); keep standard items like Call to Order, Approval of Minutes, and Adjournment; drop page headers, footers, and logistics that are not agenda items; never invent anything.
 ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     busy('Reading the agenda…');
     try {
       const out = parseJSON(await callClaude(content, 'You convert meeting agendas into structured JSON. Respond with JSON only.', 4000));
       unbusy(); pendingFile = null;
-      if (txt) { out.startTime = out.startTime || findTime(txt); out.closingPrayer = out.closingPrayer || findClosingPrayer(txt); }
+      if (txt) { out.startTime = out.startTime || findTime(txt); out.openingPrayer = out.openingPrayer || findOpeningPrayer(txt); out.closingPrayer = out.closingPrayer || findClosingPrayer(txt); }
       applyAgenda(out.items, out);
     } catch (err) {
       unbusy();
@@ -363,11 +369,12 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     root.innerHTML = `<div class="center"><div class="card att">
       <div class="eyebrow">${esc(m.meta.title || 'Meeting')} · ${esc(A.fmtDate(m.meta.date))}</div>
       <div class="row" style="justify-content:space-between;align-items:baseline"><h1>Who’s here?</h1><span class="muted" id="cnt">${list.length ? `${n} of ${list.length}` : ''}</span></div>
-      ${list.length ? `<div class="people">${list.map(p => `<button class="person" data-id="${p.id}" aria-pressed="${m.present.includes(p.id)}"><span class="avatar">${esc(A.initials(p.name))}</span><span class="nm">${esc(p.name)}</span><span class="ck">${I('check')}</span></button>`).join('')}</div>`
-        : `<p class="muted" style="margin:20px 0">No names in the group yet. Add them under People on the home screen.</p>`}
+      <div class="people">${list.map(p => `<button class="person" data-id="${p.id}" aria-pressed="${m.present.includes(p.id)}"><span class="avatar">${esc(A.initials(p.name))}</span><span class="nm">${esc(p.name)}</span><span class="ck">${I('check')}</span></button>`).join('')}
+        <button class="person add-p" id="attAdd">${I('plus')}Add name</button></div>
       <div class="row" style="justify-content:space-between"><button class="btn ghost" id="back">${I('back')}Back</button><button class="btn primary" id="go">${m.startedAt ? 'Back to agenda' : 'Start agenda'}${I('next')}</button></div>
     </div></div>`;
-    root.querySelectorAll('.person').forEach(b => b.onclick = () => {
+    on('attAdd', addName);
+    root.querySelectorAll('.person[data-id]').forEach(b => b.onclick = () => {
       const id = b.dataset.id, i = m.present.indexOf(id);
       if (i >= 0) m.present.splice(i, 1); else m.present.push(id);
       b.setAttribute('aria-pressed', i < 0); document.getElementById('cnt').textContent = `${m.present.length} of ${list.length}`; save();
@@ -376,6 +383,33 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     on('go', () => {
       if (!m.startedAt) { m.startedAt = new Date().toISOString(); m.cur = 0; }
       m.phase = 'meeting'; save(); render(); startLive();
+    });
+  }
+
+  /* a new name joins the group's list (same as People → Add name) and is marked present */
+  function addName() {
+    if (!online()) return A.toast('Adding a name needs a connection. Add them under People once you’re back online.');
+    dlg.innerHTML = `<h2>Add a name</h2>
+      <div class="field"><label class="label" for="anName">Name as it should appear</label><input class="input" id="anName" placeholder="e.g. Dana R." maxlength="80"></div>
+      <p class="note-s">Joins the group’s list and is marked present. Add an email or remove names later under People.</p>
+      <div class="dlg-actions"><button class="btn" id="anCancel">Cancel</button><button class="btn primary" id="anOk">Add</button></div>`;
+    dlg.showModal();
+    setTimeout(() => document.getElementById('anName').focus(), 30);
+    on('anCancel', () => dlg.close());
+    on('anOk', async () => {
+      const name = document.getElementById('anName').value.trim().replace(/\s+/g, ' ');
+      if (!name) return document.getElementById('anName').focus();
+      const m = M(), same = (D.cache.people || []).find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (same) {
+        if (!m.present.includes(same.id)) m.present.push(same.id);
+        dlg.close(); save(); renderAttendance(); return A.toast(same.name + ' is already on the list. Marked present.');
+      }
+      const btn = document.getElementById('anOk'); btn.disabled = true;
+      const { data, error } = await sb.from('people').insert({ group_id: C.me.group_id, name }).select('id,name').single();
+      if (error) { btn.disabled = false; return A.toast('Not added: ' + error.message); }
+      (D.cache.people = D.cache.people || []).push({ id: data.id, name: data.name });
+      m.present.push(data.id);
+      dlg.close(); save(); renderAttendance(); A.toast(data.name + ' added');
     });
   }
 
@@ -614,13 +648,11 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
           ${kept.map(({ it, s }) => `<p class="note-s"><span class="amber-text">Kept in the to-do list:</span> “${esc((it && (it.task || it.title)) || 'an item')}” no longer needs follow-up here, but it has updates, so it wasn’t deleted. Delete it from the to-do list if it’s done with.</p>`).join('')}
           ${!syncing && !m.syncError && m.decisionsSent ? `<p class="note-s">${m.decisionsSent} decision${m.decisionsSent === 1 ? '' : 's'} now on the group’s Decisions list.</p>` : ''}</section>
         <section class="card mins"><h2 style="margin:0 0 4px;font-size:18px">Minutes</h2>
-          <div><label class="label" for="wPrayer">Closing prayer by</label><input class="input" id="wPrayer" value="${esc(m.meta.closingPrayer || '')}" placeholder="Brother…"></div>
           <button class="btn primary block" id="pdf">${I('download')}Download PDF</button>
           ${smart() ? `<button class="btn soft block" id="pdfAI">${I('download')}Polished minutes PDF</button>` : ''}
           <button class="btn block" id="saveFile">${I('save')}Save a copy</button>
           <button class="btn ghost danger block" id="newMtg">Start a new meeting</button></section>
       </div></div>`;
-    const wp = document.getElementById('wPrayer'); wp.oninput = () => { m.meta.closingPrayer = wp.value; save(); };
     on('homeLink', e => { e.preventDefault(); C.goHome(); });
     on('backMtg', () => { m.phase = 'meeting'; m.endedAt = null; save(); render(); startLive(); });
     on('retry', syncTracker);
