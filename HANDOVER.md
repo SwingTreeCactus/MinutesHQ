@@ -121,6 +121,14 @@ Hosting and security posture
 
 ## Open ideas (offered, not decided)
 
+Review findings, Nov 12 (Mark: "I'll come back to this later"):
+- Email reminders: the Settings switch and the People email fields promise reminders, but email isn't set up (Resend, deploy `notify`, secrets, cron). Finish it, or hide those controls until then.
+- Two settings places: Minutes style and the Anthropic key are behind the gear on meeting setup; everything else is in Settings. Proposed: move both into Settings (admins only, still per device).
+- Phone: the Settings gear and refresh show only on the To-do tab, not on Decisions or Next agenda.
+- The setup screen title always says "New meeting", even when continuing one; show the meeting's name.
+- Confidential meetings can be followed live by members (consistent with "confidential = no outside processing"); option to keep confidential ones admins-only.
+- Wrap-up says "N decisions now on the group's Decisions list" counting decisions deleted from that meeting's list.
+
 - Let admins run a meeting when the database can't be reached (paused or down), not only when the tablet is offline; follow-ups would send once it's back. Offered Nov 5; Mark chose only the keep-awake job for now.
 - What a viewer sees when the meeting ends (built for now as a "The meeting ended." toast and back to home; proposed: a short "Meeting ended" screen; the notes disappear with it since they're never stored).
 - PDF extras: organization name/logo, "Absent" line (note: absence isn't recorded), signature/approval block, A4.
