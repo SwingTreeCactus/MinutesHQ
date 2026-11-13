@@ -630,7 +630,11 @@
       }
       const rem = document.getElementById('eRem');
       if (email || S.contacts[pid]) {
-        const { error } = await sb.from('person_private').upsert({ person_id: pid, email: email || null, reminders: rem ? rem.getAttribute('aria-checked') === 'true' : true }, { onConflict: 'person_id' });
+        // Update the existing contact row, or insert one. (An upsert would also rewrite person_id, which the database doesn't allow.)
+        const fields = { email: email || null, reminders: rem ? rem.getAttribute('aria-checked') === 'true' : true };
+        const { error } = S.contacts[pid]
+          ? await sb.from('person_private').update(fields).eq('person_id', pid)
+          : await sb.from('person_private').insert({ person_id: pid, ...fields });
         if (error) return A.toast(error.message);
       }
       dlg.close(); A.toast('Saved'); await refresh(true);
