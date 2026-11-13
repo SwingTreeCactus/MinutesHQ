@@ -126,7 +126,7 @@ They'll see "Waiting for approval" until an admin approves them.
 
 **During the meeting:** tap who's present (**Add name** puts someone new on the group's list and marks them present), then work through the agenda. Each item has Notes, a Decision, and **Needs follow-up** (task, people, due date). You can jump around, reorder, add and remove items. Other admins can follow along read-only; they browse on their own and never see which item you're on. Notes reach them directly and are never stored on the server.
 
-**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). Download the PDF or save a copy.
+**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). **Preview** shows the PDF pages before you download, and lets you switch between three styles (Modern, Classic, Plain); the choice is remembered and can also be set in Settings → **Minutes style**. Download the PDF or save a copy.
 
 **Next agenda (admins):** your own private scratchpad of topics for the next meeting. Check a note off once it's been raised; **Clear** removes checked-off notes.
 

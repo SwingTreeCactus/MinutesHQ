@@ -8,6 +8,8 @@
   const MODELS = [['claude-sonnet-5-5', 'Sonnet 5.5 (recommended)'], ['claude-haiku-5-5', 'Haiku 5.5 (cheapest)'], ['claude-opus-5-5', 'Opus 5.5 (most capable)']];
   const MAMMOTH = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
   const JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
   const freshMeeting = () => ({ id: uid(), phase: 'setup', meta: { title: '', date: A.todayISO(), location: '', startTime: '', openingPrayer: '', closingPrayer: '', confidential: false },
@@ -648,6 +650,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
           ${kept.map(({ it, s }) => `<p class="note-s"><span class="amber-text">Kept in the to-do list:</span> “${esc((it && (it.task || it.title)) || 'an item')}” no longer needs follow-up here, but it has updates, so it wasn’t deleted. Delete it from the to-do list if it’s done with.</p>`).join('')}
           ${!syncing && !m.syncError && m.decisionsSent ? `<p class="note-s">${m.decisionsSent} decision${m.decisionsSent === 1 ? '' : 's'} now on the group’s Decisions list.</p>` : ''}</section>
         <section class="card mins"><h2 style="margin:0 0 4px;font-size:18px">Minutes</h2>
+          <button class="btn soft block" id="pdfPrev">Preview</button>
           <button class="btn primary block" id="pdf">${I('download')}Download PDF</button>
           ${smart() ? `<button class="btn soft block" id="pdfAI">${I('download')}Polished minutes PDF</button>` : ''}
           <button class="btn block" id="saveFile">${I('save')}Save a copy</button>
@@ -657,6 +660,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     on('backMtg', () => { m.phase = 'meeting'; m.endedAt = null; save(); render(); startLive(); });
     on('retry', syncTracker);
     on('pdf', () => exportPDF(false));
+    on('pdfPrev', previewPDF);
     on('pdfAI', () => exportPDF(true));
     on('saveFile', saveMeetingFile);
     on('newMtg', async () => {
@@ -668,14 +672,19 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
   }
 
   /* ---------- PDF ---------- */
-  async function exportPDF(ai) {
-    try { await A.loadScript(JSPDF); } catch (e) { return A.toast('The PDF tool didn’t load. Connect to the internet and try again.'); }
+  const pdfStyle = () => D.settings.pdfStyle || 'modern';
+  function pdfModel() {
     const m = M();
-    const model = {
+    return {
       meta: m.meta, startedAt: m.startedAt, endedAt: m.endedAt, summary: '',
       present: m.present.map(personName),
       items: m.items.map(it => ({ title: it.title, detail: it.detail, discussion: it.notes, decision: it.decision, followUp: it.followUp, task: it.task, assignees: it.assignees.map(personName), due: it.due, openedAt: it.openedAt }))
     };
+  }
+  async function exportPDF(ai) {
+    try { await A.loadScript(JSPDF); } catch (e) { return A.toast('The PDF tool didn’t load. Connect to the internet and try again.'); }
+    const m = M();
+    const model = pdfModel();
     if (ai) {
       if (!smart()) return;
       busy('Polishing the minutes…');
@@ -693,7 +702,60 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
     }
     const name = ((m.meta.date || A.todayISO()) + ' ' + (m.meta.title || 'meeting')).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + (ai ? '-minutes.pdf' : '-notes.pdf');
     m.exported = true; save();
-    A.shareOrDownload(window.buildMinutesPDF(model).output('blob'), name, 'application/pdf');
+    A.shareOrDownload(window.buildMinutesPDF(model, pdfStyle()).output('blob'), name, 'application/pdf');
+  }
+
+  /* Preview: the real PDF pages, drawn with PDF.js (Chrome on Android can't show a PDF inside a page).
+     The worker is fetched as text and started from a blob so it also works offline once cached. */
+  let workerUrl = null;
+  async function loadPdfJs() {
+    await Promise.all([A.loadScript(JSPDF), A.loadScript(PDFJS)]);
+    if (!workerUrl) {
+      const res = await fetch(PDFJS_WORKER); if (!res.ok) throw new Error('needs an internet connection');
+      workerUrl = URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' }));
+    }
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+  }
+  async function previewPDF() {
+    busy('Making the preview…');
+    try { await loadPdfJs(); } catch (e) { unbusy(); return A.toast('The preview didn’t load. Connect to the internet and try again.'); }
+    unbusy();
+    dlg.classList.add('preview');
+    dlg.innerHTML = `<div class="pv-h"><h2>Preview</h2><div class="seg" role="tablist" aria-label="Minutes style">${(window.PDF_STYLES || []).map(([v, l]) => `<button role="tab" data-style="${v}" aria-selected="${v === pdfStyle()}">${l}</button>`).join('')}</div></div>
+      <div class="pv-pages" id="pvPages"></div>
+      <div class="dlg-actions"><button class="btn" id="pvClose">Close</button><button class="btn primary" id="pvDl">${I('download')}Download PDF</button></div>`;
+    const close = () => { dlg.close(); dlg.classList.remove('preview'); };
+    dlg.onclose = () => dlg.classList.remove('preview');
+    dlg.showModal();
+    on('pvClose', close);
+    on('pvDl', () => { close(); exportPDF(false); });
+    dlg.querySelectorAll('[data-style]').forEach(b => b.onclick = () => {
+      D.settings.pdfStyle = b.dataset.style; save();
+      dlg.querySelectorAll('[data-style]').forEach(x => x.setAttribute('aria-selected', x === b));
+      drawPreview();
+    });
+    drawPreview();
+  }
+  let drawSeq = 0;
+  async function drawPreview() {
+    const box = document.getElementById('pvPages'); if (!box) return;
+    const seq = ++drawSeq;
+    try {
+      const data = window.buildMinutesPDF(pdfModel(), pdfStyle()).output('arraybuffer');
+      const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+      const canvases = [];
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        const width = Math.max(320, box.clientWidth - 2);
+        const vp = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width * (window.devicePixelRatio || 1) });
+        const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+        c.setAttribute('aria-label', 'Page ' + n + ' of ' + pdf.numPages);
+        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        canvases.push(c);
+      }
+      if (seq !== drawSeq) return;
+      box.replaceChildren(...canvases);
+    } catch (e) { if (seq === drawSeq) box.innerHTML = '<p class="muted">Couldn’t draw the preview. Download the PDF instead.</p>'; }
   }
 
   /* ---------- meeting files ---------- */
@@ -733,10 +795,12 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
       <div class="field"><label class="label" for="sKey">Anthropic key</label><input class="input" id="sKey" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(D.settings.apiKey)}">
         <p class="note-s">Saved on this device. Lets Read agenda handle PDFs and photos, and adds Polished minutes PDF. Optional.</p></div>
       <div class="field"><label class="label" for="sModel">Model</label><select class="select" id="sModel">${MODELS.map(([v, l]) => `<option value="${v}" ${v === D.settings.model ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label class="label" for="sStyle">Minutes style</label><select class="select" id="sStyle">${(window.PDF_STYLES || []).map(([v, l]) => `<option value="${v}" ${v === pdfStyle() ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <p class="note-s">How the minutes PDF looks. Preview it on the wrap-up.</p></div>
       <div class="dlg-actions" style="justify-content:space-between"><button class="btn ghost danger" id="sWipe">Erase meeting notes on this device</button><span class="row"><button class="btn" id="sCancel">Cancel</button><button class="btn primary" id="sSave">Save</button></span></div>`;
     dlg.showModal();
     on('sCancel', () => dlg.close());
-    on('sSave', () => { D.settings.apiKey = document.getElementById('sKey').value.trim(); D.settings.model = document.getElementById('sModel').value; save(); dlg.close(); render(); A.toast('Saved'); });
+    on('sSave', () => { D.settings.apiKey = document.getElementById('sKey').value.trim(); D.settings.model = document.getElementById('sModel').value; D.settings.pdfStyle = document.getElementById('sStyle').value; save(); dlg.close(); render(); A.toast('Saved'); });
     on('sWipe', () => {
       if (!confirm('Erase your meeting notes and settings from this device? Items already in the to-do list stay there.')) return;
       Vault.erase(); try { localStorage.removeItem(markerKey()); } catch (e) {}
