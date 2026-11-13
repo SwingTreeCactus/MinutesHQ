@@ -151,6 +151,7 @@
       Vault.use(r.uid);
       if (!r.offline) { try { await load(); } catch (e) { S.loaded = false; } }
       render(); startTimers();
+      if (isAdmin() && !r.offline && S.loaded) Meeting.sendPending(ctx());   // a meeting ended offline
     })().finally(() => { starting = null; });
     return starting;
   }
@@ -737,7 +738,7 @@
     if (evt === 'SIGNED_IN' && !S.me) start();
     if (evt === 'SIGNED_OUT' && S.me) { S.me = null; start(); }
   });
-  window.addEventListener('online', () => { if (S.me && S.me.offline) start(); });
+  window.addEventListener('online', () => { if (S.me && S.me.offline) start(); else if (S.me && isAdmin()) Meeting.sendPending(ctx()); });
   window.AppShell = { start, refresh, nav, isAdmin, myId, nameOf, wide };
   A.registerSW();
   start();

@@ -19,7 +19,7 @@
   let C = null;              // context from the app: uid, me (person), group, people, offline, goHome
   let D = null;              // this admin's saved meeting data while the meeting screens are open
   let active = false, intent = 'continue';
-  let syncing = false, pendingFile = null;
+  let syncing = false, pendingFile = null, background = false;
 
   /* ---------- storage ---------- */
   const markerKey = () => 'mm_active:' + C.uid;
@@ -54,7 +54,7 @@
   function open(ctx) {
     C = ctx; active = true;
     A.loadScript(JSPDF).catch(() => {});      // keep the PDF tool cached for offline meetings
-    if (D) return render();
+    if (D) return background ? afterLoad() : render();   // a background send may have the last meeting loaded
     if (document.getElementById('lockForm')) return;   // never wipe an old passphrase being typed
     D = Vault.load();
     if (D) return afterLoad();
@@ -99,8 +99,16 @@
       } catch (ex) { unbusy(); renderLegacy(ex.message); }
     };
   }
+  /* The group's names from the database, plus any name this meeting still uses that the fresh list lacks
+     (a name added on Who's here moments ago, or one deleted since), so nobody turns into "Former member". */
+  function freshPeople() {
+    const list = C.people.map(p => ({ id: p.id, name: p.name }));
+    const m = D.meeting, used = new Set([...(m.present || []), ...(m.items || []).flatMap(i => i.assignees || [])]);
+    (D.cache.people || []).forEach(p => { if (used.has(p.id) && !list.some(x => x.id === p.id)) list.push(p); });
+    return list;
+  }
   function afterLoad() {
-    if (!C.offline) D.cache = { people: C.people.map(p => ({ id: p.id, name: p.name })), at: new Date().toISOString() };
+    if (!C.offline) D.cache = { people: freshPeople(), at: new Date().toISOString() };
     const m = M();
     const empty = m.phase === 'setup' && !m.items.length && !m.meta.title;
     if (intent === 'new' && m.phase === 'done') {
@@ -560,7 +568,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
   const norm = v => (v === undefined || v === null || v === '') ? null : String(v);
   const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
   async function syncTracker() {
-    if (!active || !D || syncing || M().phase !== 'done') return;
+    if ((!active && !background) || !D || syncing || M().phase !== 'done') return;
     if (!online()) { M().syncError = 'You’re offline'; renderDoneSafe(); return; }
     syncing = true; renderDoneSafe();
     const m = M(); let failed = null;
@@ -823,5 +831,27 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
   window.addEventListener('pagehide', () => { if (active && D) saveNow(); });
   window.addEventListener('online', () => { if (active && D && M().phase === 'done') syncTracker(); if (active && D && M().phase === 'meeting') startLive(); });
 
-  window.Meeting = { open, close, marker, intent: x => { intent = x; } };
+  /* A meeting ended without a connection: send its follow-ups and decisions as soon as the app is online again,
+     without waiting for someone to reopen the wrap-up. Safe to repeat: sending never duplicates. */
+  function unsent(m) {
+    return !!m.syncError || m.decisionsSent == null
+      || (m.items || []).some(i => i.followUp && (i.assignees || []).length && !(m.sync || {})[i.id]);
+  }
+  async function sendPending(ctx) {
+    if (active || syncing || background || !navigator.onLine) return;
+    const data = Vault.load();
+    if (!data || !data.meeting || data.meeting.phase !== 'done' || !unsent(data.meeting)) return;
+    C = ctx; D = data; background = true;
+    try { await syncTracker(); }
+    finally {
+      background = false;
+      if (!active && D) {
+        clearTimeout(saveT); store();
+        const ok = !D.meeting.syncError; D = null;
+        if (ok) { A.toast('Follow-ups from the last meeting were sent'); if (ctx.reload) ctx.reload(); }
+      }
+    }
+  }
+
+  window.Meeting = { open, close, marker, sendPending, intent: x => { intent = x; } };
 })();
