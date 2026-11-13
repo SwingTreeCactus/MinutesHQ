@@ -126,14 +126,14 @@
     S.assignees = {}; asg.forEach(a => (S.assignees[a.item_id] = S.assignees[a.item_id] || []).push(a.person_id));
     S.updates = {}; ups.forEach(u => (S.updates[u.item_id] = S.updates[u.item_id] || []).push(u));
     S.contacts = {}; priv.forEach(c => { S.contacts[c.person_id] = c; });
+    S.live = await q(sb.from('live_meetings').select('*'));   // everyone in the group can follow a live meeting
     if (isAdmin()) {
-      const [notes, live, reqs] = await Promise.all([
+      const [notes, reqs] = await Promise.all([
         q(sb.from('agenda_notes').select('*').order('created_at', { ascending: false })),
-        q(sb.from('live_meetings').select('*')),
         q(sb.from('join_requests').select('*').order('created_at'))
       ]);
-      S.notes = notes; S.live = live; S.requests = reqs;
-    } else { S.notes = []; S.live = []; S.requests = []; }
+      S.notes = notes; S.requests = reqs;
+    } else { S.notes = []; S.requests = []; }
     S.loadedAt = new Date(); S.loaded = true;
   }
 
@@ -189,7 +189,7 @@
     if (r.v !== 'meeting') Meeting.close();
     if (r.v !== 'live') Live.leave();
     if (r.v === 'meeting' && isAdmin()) return Meeting.open(ctx());
-    if (r.v === 'live' && isAdmin()) return Live.view(r.id, ctx());
+    if (r.v === 'live') return Live.view(r.id, ctx());
     if (r.v === 'item' && S.items.find(i => i.id === r.id)) return renderDetail(r.id);
     if (r.v === 'new' && isAdmin()) return renderNew();
     if (r.v === 'settings') return renderSettings();
@@ -214,7 +214,7 @@
   function renderPhoneHome() {
     const t = curTab();
     root.innerHTML = `<div class="wrap"><div class="tabs-bar">${segHTML()}</div>
-      ${t === 'todo' && isAdmin() ? liveNow().map(liveCardSmall).join('') : ''}
+      ${t === 'todo' ? liveNow().map(liveCardSmall).join('') : ''}
       <div id="pane"></div></div>`;
     wireSeg();
     renderPane(document.getElementById('pane'), t, false);

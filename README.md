@@ -120,11 +120,11 @@ They'll see "Waiting for approval" until an admin approves them.
 
 ## Using it
 
-**Admin home (tablet):** the group name, **People** (with any join requests), and your account. **Start a meeting** is the one main button; it reads **Continue … meeting** while one is underway on this tablet. When another admin is running a meeting, a **Live now** card lets you **Follow along**. On the right: **To-do | Decisions | Next agenda**.
+**Admin home (tablet):** the group name, **People** (with any join requests), and your account. **Start a meeting** is the one main button; it reads **Continue … meeting** while one is underway on this tablet. When another admin is running a meeting, a **Live now** card lets you **Follow along** (members get the same card above their to-do list). On the right: **To-do | Decisions | Next agenda**.
 
 **Before the meeting:** paste or load the agenda and tap **Read agenda**, or add items by hand. The start time and the opening- and closing-prayer brothers are picked up when the agenda lists them. **Add open action items** puts everything still open into the agenda as item 2. **Confidential** keeps that meeting's agenda and notes on the tablet (nothing is sent out for reading or polishing). Then **Next: who's here**.
 
-**During the meeting:** tap who's present (**Add name** puts someone new on the group's list and marks them present), then work through the agenda. Each item has Notes, a Decision, and **Needs follow-up** (task, people, due date). You can jump around, reorder, add and remove items. Other admins can follow along read-only; they browse on their own and never see which item you're on. Notes reach them directly and are never stored on the server.
+**During the meeting:** tap who's present (**Add name** puts someone new on the group's list and marks them present), then work through the agenda. Each item has Notes, a Decision, and **Needs follow-up** (task, people, due date). You can jump around, reorder, add and remove items. Everyone in the group can follow along read-only from the Live now card; they browse on their own and never see which item you're on. Notes reach them directly and are never stored on the server.
 
 **After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). **Preview** shows the PDF pages before you download, and lets you switch between three styles (Modern, Classic, Plain); the choice is remembered and can also be set in Settings → **Minutes style**. Download the PDF or save a copy.
 
@@ -153,7 +153,7 @@ js/config.js               Your Supabase address and key (edit this)
 js/common.js               Sign-in, dates, shared helpers
 js/app.js                  Sign-in gates, joining, to-do list, Decisions, Next agenda, settings, people, Admin home
 js/meeting.js              Running a meeting on the tablet
-js/live.js                 Live view for other admins
+js/live.js                 Live view: everyone in the group can follow a meeting
 js/vault.js                Meeting notes saved on the device (and the one-time move from the old passphrase format)
 js/pdf.js                  PDF layout
 js/my.js                   Private link page

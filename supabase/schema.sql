@@ -275,8 +275,8 @@ create policy notes_own on public.agenda_notes for all to authenticated
   using (person_id = public.me_id())
   with check (person_id = public.me_id() and public.is_group_admin(public.my_group()));
 
--- Live now: the group's admins see it; only the note-taker writes their own row.
-create policy live_read on public.live_meetings for select to authenticated using (public.is_group_admin(group_id));
+-- Live now: everyone in the group sees it (Mark, Nov 12); only the note-taker (an admin) writes their own row.
+create policy live_read on public.live_meetings for select to authenticated using (group_id = public.my_group());
 create policy live_own on public.live_meetings for all to authenticated
   using (person_id = public.me_id())
   with check (person_id = public.me_id() and public.is_group_admin(group_id));
@@ -569,22 +569,24 @@ alter function public.touch_updated_at() set search_path = public;
 alter function public.jwt_email() set search_path = public;
 
 -- ============================================================
--- Live view: only the group's admins can join a meeting's broadcast channel ("live:<id>").
+-- Live view: everyone in the group can follow a meeting's broadcast channel ("live:<id>").
+-- Only the group's admins send notes; anyone following may send just the "hello" that asks for the current notes.
 -- ============================================================
 do $$
 begin
   if exists (select 1 from information_schema.tables where table_schema = 'realtime' and table_name = 'messages') then
     execute $p$
-      create policy live_admins_receive on realtime.messages for select to authenticated using (
+      create policy live_group_receive on realtime.messages for select to authenticated using (
         realtime.messages.extension = 'broadcast' and exists (
           select 1 from public.live_meetings l
-          where 'live:' || l.id::text = realtime.topic() and public.is_group_admin(l.group_id)))
+          where 'live:' || l.id::text = realtime.topic() and l.group_id = public.my_group()))
     $p$;
     execute $p$
-      create policy live_admins_send on realtime.messages for insert to authenticated with check (
+      create policy live_group_send on realtime.messages for insert to authenticated with check (
         realtime.messages.extension = 'broadcast' and exists (
           select 1 from public.live_meetings l
-          where 'live:' || l.id::text = realtime.topic() and public.is_group_admin(l.group_id)))
+          where 'live:' || l.id::text = realtime.topic() and l.group_id = public.my_group()
+            and (public.is_group_admin(l.group_id) or realtime.messages.event = 'hello')))
     $p$;
   end if;
 end $$;
