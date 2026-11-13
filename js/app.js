@@ -8,7 +8,7 @@
   const STALE_MS = 10 * 60 * 1000;   // a Live now card disappears after 10 minutes without updates
 
   const S = {
-    me: null, people: [], items: [], assignees: {}, updates: {}, decisions: null, notes: [], live: [], requests: [], contacts: {},
+    me: null, people: [], items: [], assignees: {}, updates: {}, decisions: null, deleted: [], notes: [], live: [], requests: [], contacts: {},
     tab: 'todo', filter: 'open', person: '', loadedAt: null, loaded: false
   };
   window.Store = S;
@@ -128,12 +128,13 @@
     S.contacts = {}; priv.forEach(c => { S.contacts[c.person_id] = c; });
     S.live = await q(sb.from('live_meetings').select('*'));   // everyone in the group can follow a live meeting
     if (isAdmin()) {
-      const [notes, reqs] = await Promise.all([
+      const [notes, reqs, deleted] = await Promise.all([
         q(sb.from('agenda_notes').select('*').order('created_at', { ascending: false })),
-        q(sb.from('join_requests').select('*').order('created_at'))
+        q(sb.from('join_requests').select('*').order('created_at')),
+        q(sb.from('decision_deletions').select('*').order('deleted_at', { ascending: false }))
       ]);
-      S.notes = notes; S.requests = reqs;
-    } else { S.notes = []; S.requests = []; }
+      S.notes = notes; S.requests = reqs; S.deleted = deleted;
+    } else { S.notes = []; S.requests = []; S.deleted = []; }
     S.loadedAt = new Date(); S.loaded = true;
   }
 
@@ -194,6 +195,7 @@
     if (r.v === 'new' && isAdmin()) return renderNew();
     if (r.v === 'settings') return renderSettings();
     if (r.v === 'people' && isAdmin()) return renderPeople();
+    if (r.v === 'deleted' && isAdmin()) return renderDeleted();
     return isAdmin() && wide() ? renderAdminHome() : renderPhoneHome();
   }
   let lastWide = wide();
@@ -457,10 +459,81 @@
   function renderDecisions(el, inPanel) {
     const d = S.decisions, list = d && Array.isArray(d.entries) ? d.entries : [];
     const head = list.length ? `${esc(d.meeting_title || 'Meeting')}${d.meeting_date ? ' · ' + esc(A.fmtDate(d.meeting_date)) : ''}` : '';
+    const decHTML = x => `<div class="dec"><span class="k">${esc(x.title || 'Agenda item')}</span><span class="v">${esc(x.decision)}</span></div>`;
+    const row = (x, i) => isAdmin()
+      ? `<div class="swipe" data-i="${i}"><button class="swipe-del" data-del="${i}" aria-label="Delete decision: ${esc(x.decision)}">Delete</button>${decHTML(x)}</div>`
+      : decHTML(x);
     el.innerHTML = `<div class="page-h">${inPanel ? '' : '<h1>Decisions</h1>'}${head ? `<div class="sub">${head}</div>` : ''}</div>
-      ${list.length ? list.map(x => `<div class="dec"><span class="k">${esc(x.title || 'Agenda item')}</span><span class="v">${esc(x.decision)}</span></div>`).join('')
+      ${list.length ? list.map(row).join('')
         + `<div class="foot-note">Replaced by the next meeting’s decisions when it ends.</div>`
         : `<div class="empty">No decisions yet. The decisions from your group’s latest meeting show here once it ends.</div>`}`;
+    if (isAdmin()) wireSwipes(el);
+  }
+
+  /* Swipe a decision left to show Delete (admins). A swipe never deletes on its own: Delete has to be tapped. */
+  const SWIPE_W = 88;
+  function wireSwipes(el) {
+    const rows = [...el.querySelectorAll('.swipe')];
+    const setOpen = (rw, open) => { rw.classList.toggle('open', open); rw.querySelector('.dec').style.transform = open ? `translateX(-${SWIPE_W}px)` : ''; };
+    rows.forEach(rw => {
+      const card = rw.querySelector('.dec');
+      let x0 = 0, y0 = 0, base = 0, dragging = false, id = null;
+      card.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; base = rw.classList.contains('open') ? -SWIPE_W : 0; dragging = false; id = e.pointerId; });
+      card.addEventListener('pointermove', e => {
+        if (id !== e.pointerId) return;
+        const dx = e.clientX - x0, dy = e.clientY - y0;
+        if (!dragging) {
+          if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+          dragging = true; card.setPointerCapture(e.pointerId); card.classList.add('drag'); rw.classList.add('dragging');
+          rows.forEach(o => { if (o !== rw) setOpen(o, false); });
+        }
+        card.style.transform = `translateX(${Math.max(-SWIPE_W - 16, Math.min(0, base + dx))}px)`;
+      });
+      const end = e => {
+        if (id !== e.pointerId) return; id = null;
+        if (!dragging) { if (rw.classList.contains('open')) setOpen(rw, false); return; }
+        card.classList.remove('drag'); rw.classList.remove('dragging');
+        setOpen(rw, base + (e.clientX - x0) < -SWIPE_W / 2);
+      };
+      card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+      const btn = rw.querySelector('.swipe-del');
+      btn.addEventListener('focus', () => { rows.forEach(o => setOpen(o, o === rw)); });
+      btn.onclick = () => deleteDecision(+btn.dataset.del);
+    });
+  }
+  async function deleteDecision(i) {
+    const d = S.decisions; if (!d) return;
+    const { data, error } = await sb.rpc('delete_decision', { p_key: d.meeting_key, p_index: i });
+    if (error) { await refresh(true); return A.toast(error.message); }
+    await refresh(true);
+    A.toast('Decision deleted', 6000);
+    const t = document.getElementById('toast'); if (!t) return;
+    const b = document.createElement('button'); b.textContent = 'Undo';
+    b.style.cssText = 'margin-left:14px;border:0;background:none;color:#7FD6CB;font-weight:700';
+    b.onclick = async () => { t.classList.remove('on'); const r = await sb.rpc('restore_decision', { p_id: data }); if (r.error) A.toast(r.error.message); else { await refresh(true); A.toast('Restored'); } };
+    t.appendChild(b);
+  }
+
+  /* ================= Deleted decisions (admins, from Settings) ================= */
+  function renderDeleted() {
+    const curKey = S.decisions && S.decisions.meeting_key;
+    root.innerHTML = `<div class="wrap">
+      <div class="backbar"><a href="#settings">${I('back')}Settings</a></div>
+      <div class="page-h"><h1>Deleted decisions</h1><div class="sub">Restore puts a decision back where it was on the Decisions list.</div></div>
+      ${S.deleted.length ? S.deleted.map(x => `<div class="deleted">
+          <span class="m">${esc(x.meeting_title || 'Meeting')}${x.meeting_date ? ' · ' + esc(A.fmtDate(x.meeting_date)) : ''}${x.title ? ' · ' + esc(x.title) : ''}</span>
+          <span class="v">${esc(x.decision)}</span>
+          <span class="m">Deleted by ${esc(x.deleted_by ? nameOf(x.deleted_by) : 'a former member')} · ${esc(A.fmtStamp(x.deleted_at))}</span>
+          ${x.meeting_key === curKey ? `<button class="btn sm soft" data-restore="${x.id}">Restore</button>` : `<span class="m amber-text">From an earlier meeting. It can’t go back on the current list.</span>`}
+        </div>`).join('') : '<div class="empty">No deleted decisions.</div>'}
+    </div>`;
+    window.scrollTo(0, 0);
+    root.querySelectorAll('[data-restore]').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      const { error } = await sb.rpc('restore_decision', { p_id: b.dataset.restore });
+      if (error) { b.disabled = false; return A.toast(error.message); }
+      await refresh(true); A.toast('Restored');
+    });
   }
 
   /* ================= Next agenda notes (admins, private) ================= */
@@ -511,7 +584,8 @@
           <div class="drow"><span class="k">Name</span><span class="v">${esc(p.name)}</span></div>
           <div class="drow"><span class="k">Group</span><span class="v">${esc(g.name || '')}${isAdmin() ? ' <span class="pill teal">Admin</span>' : ''}</span></div>
         </div>
-        ${isAdmin() ? `<div class="rows"><a class="drow" href="#people"><span class="k" style="color:var(--ink);font-weight:600">People and join requests</span><span class="v">${S.requests.length ? `<span class="pill amber">${S.requests.length}</span>` : ''}${I('right', 'i', 18)}</span></a></div>` : ''}
+        ${isAdmin() ? `<div class="rows"><a class="drow" href="#people"><span class="k" style="color:var(--ink);font-weight:600">People and join requests</span><span class="v">${S.requests.length ? `<span class="pill amber">${S.requests.length}</span>` : ''}${I('right', 'i', 18)}</span></a>
+          <a class="drow" href="#deleted"><span class="k" style="color:var(--ink);font-weight:600">Deleted decisions</span><span class="v">${S.deleted.length ? `<span class="pill gray">${S.deleted.length}</span>` : ''}${I('right', 'i', 18)}</span></a></div>` : ''}
         <div class="card">
           <button class="switch wide" role="switch" id="remSw" aria-checked="${rem}" ${S.loaded ? '' : 'disabled'}>Email reminders<span class="track"></span></button>
           <p>One email at 7 AM when something of yours is due tomorrow or today, and a Monday note listing anything overdue. ${mine.email ? 'Sent to ' + esc(mine.email) + '.' : 'No email address on file.'}</p>
@@ -657,7 +731,7 @@
 
   /* ================= go ================= */
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && S.me && S.me.person && ['', 'people', 'item', 'settings'].includes(route().v)) refresh(true);
+    if (document.visibilityState === 'visible' && S.me && S.me.person && ['', 'people', 'item', 'settings', 'deleted'].includes(route().v)) refresh(true);
   });
   if (sb) sb.auth.onAuthStateChange(evt => {
     if (evt === 'SIGNED_IN' && !S.me) start();

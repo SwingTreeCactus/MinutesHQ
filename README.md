@@ -128,6 +128,8 @@ They'll see "Waiting for approval" until an admin approves them.
 
 **After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). **Preview** shows the PDF pages before you download, and lets you switch between three styles (Modern, Classic, Plain); the choice is remembered and can also be set in Settings → **Minutes style**. Download the PDF or save a copy.
 
+**Decisions (admins):** swipe a decision left and tap **Delete** to take it off the list (Undo appears for a few seconds). **Settings → Deleted decisions** shows what was deleted, by whom and when, with **Restore** while that meeting's list is still current. Ending the meeting again doesn't bring a deleted decision back.
+
 **Next agenda (admins):** your own private scratchpad of topics for the next meeting. Check a note off once it's been raised; **Clear** removes checked-off notes.
 
 **Rules everyone lives by:** members see only their own group. Everyone sees every item in it and can add updates; only the people assigned (or an admin) can mark an item done; only admins create, edit or delete items, run meetings, and approve people. These are enforced by the database, not just the app.

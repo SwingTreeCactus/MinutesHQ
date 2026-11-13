@@ -100,6 +100,22 @@ create table public.decision_lists (
   updated_at timestamptz not null default now()
 );
 
+-- Decisions an admin deleted from the list, with what they said, so an admin can restore them (Mark, Nov 12).
+-- Restoring removes the row. Re-ending a meeting never brings a deleted decision back.
+create table public.decision_deletions (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  meeting_key text not null,
+  meeting_title text,
+  meeting_date date,
+  position int not null,
+  title text,
+  decision text not null,
+  deleted_by uuid references public.people(id) on delete set null,
+  deleted_at timestamptz not null default now()
+);
+create index decision_deletions_group_idx on public.decision_deletions (group_id, deleted_at desc);
+
 -- Each admin's private notes for the next meeting.
 create table public.agenda_notes (
   id uuid primary key default gen_random_uuid(),
@@ -194,6 +210,7 @@ alter table public.items           enable row level security;
 alter table public.item_assignees  enable row level security;
 alter table public.item_updates    enable row level security;
 alter table public.decision_lists  enable row level security;
+alter table public.decision_deletions enable row level security;
 alter table public.agenda_notes    enable row level security;
 alter table public.live_meetings   enable row level security;
 alter table public.link_tokens     enable row level security;   -- no policies: server-only
@@ -214,6 +231,7 @@ grant insert (person_id, email, reminders) on public.person_private to authentic
 grant update (email, reminders) on public.person_private to authenticated;
 revoke insert, update on public.join_requests from authenticated;
 revoke insert, update, delete on public.decision_lists from authenticated;
+revoke insert, update, delete on public.decision_deletions from authenticated;
 revoke all on public.link_tokens, public.reminder_sends from authenticated;
 
 -- Groups: members see their own group; admins can rename it.
@@ -269,6 +287,8 @@ create policy updates_admin_delete on public.item_updates for delete to authenti
 
 -- Decisions list: everyone in the group reads it; it's written only by publish_decisions().
 create policy decisions_read on public.decision_lists for select to authenticated using (group_id = public.my_group());
+-- Deleted decisions: only the group's admins see them; written only by delete_decision() and restore_decision().
+create policy deletions_read on public.decision_deletions for select to authenticated using (public.is_group_admin(group_id));
 
 -- Next agenda notes: each admin sees and changes only their own.
 create policy notes_own on public.agenda_notes for all to authenticated
@@ -495,6 +515,10 @@ declare g uuid := public.my_group(); cur public.decision_lists;
 begin
   if g is null or not public.is_group_admin(g) then raise exception 'Only an admin can do that'; end if;
   if jsonb_typeof(p_entries) <> 'array' or jsonb_array_length(p_entries) = 0 then return false; end if;
+  -- decisions an admin deleted from this meeting's list stay deleted when the meeting is ended again
+  p_entries := (select coalesce(jsonb_agg(x.e order by x.n), '[]'::jsonb) from jsonb_array_elements(p_entries) with ordinality as x(e, n)
+    where not exists (select 1 from public.decision_deletions d where d.group_id = g and d.meeting_key = p_key
+                      and d.title is not distinct from x.e ->> 'title' and d.decision = x.e ->> 'decision'));
   select * into cur from public.decision_lists where group_id = g;
   if cur.group_id is not null and cur.meeting_key <> p_key
      and coalesce(cur.started_at, '-infinity') > coalesce(p_started, 'infinity') then
@@ -505,6 +529,44 @@ begin
   on conflict (group_id) do update set meeting_key = excluded.meeting_key, meeting_title = excluded.meeting_title,
     meeting_date = excluded.meeting_date, started_at = excluded.started_at, entries = excluded.entries, updated_at = now();
   return true;
+end $$;
+
+-- Delete one decision from the group's list (admins). p_key guards against the list having changed meanwhile.
+create or replace function public.delete_decision(p_key text, p_index int) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare g uuid := public.my_group(); cur public.decision_lists; e jsonb; did uuid;
+begin
+  if g is null or not public.is_group_admin(g) then raise exception 'Only an admin can do that'; end if;
+  select * into cur from public.decision_lists where group_id = g;
+  if cur.group_id is null or cur.meeting_key <> p_key then raise exception 'The Decisions list changed. Refresh and try again.'; end if;
+  e := cur.entries -> p_index;
+  if e is null then raise exception 'That decision is already gone'; end if;
+  insert into public.decision_deletions (group_id, meeting_key, meeting_title, meeting_date, position, title, decision, deleted_by)
+  values (g, cur.meeting_key, cur.meeting_title, cur.meeting_date, p_index, e ->> 'title', coalesce(e ->> 'decision', ''), public.me_id())
+  returning id into did;
+  update public.decision_lists set entries = entries - p_index, updated_at = now() where group_id = g;
+  return did;
+end $$;
+
+-- Put a deleted decision back where it was (admins), while the list is still that meeting's. The record is removed.
+create or replace function public.restore_decision(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare g uuid := public.my_group(); d public.decision_deletions; cur public.decision_lists; n int; pos int;
+begin
+  if g is null or not public.is_group_admin(g) then raise exception 'Only an admin can do that'; end if;
+  select * into d from public.decision_deletions where id = p_id and group_id = g;
+  if d.id is null then raise exception 'That decision was already restored'; end if;
+  select * into cur from public.decision_lists where group_id = g;
+  if cur.group_id is null or cur.meeting_key <> d.meeting_key then
+    raise exception 'That meeting''s decisions are no longer the current list, so it can''t go back';
+  end if;
+  n := jsonb_array_length(cur.entries); pos := least(greatest(d.position, 0), n);
+  update public.decision_lists set updated_at = now(), entries =
+    coalesce((select jsonb_agg(x.e order by x.n) from jsonb_array_elements(cur.entries) with ordinality as x(e, n) where x.n <= pos), '[]'::jsonb)
+    || jsonb_build_array(jsonb_build_object('title', d.title, 'decision', d.decision))
+    || coalesce((select jsonb_agg(x.e order by x.n) from jsonb_array_elements(cur.entries) with ordinality as x(e, n) where x.n > pos), '[]'::jsonb)
+  where group_id = g;
+  delete from public.decision_deletions where id = d.id;
 end $$;
 
 -- An admin can cancel someone's private links (the next reminder email carries a new one).
@@ -553,11 +615,13 @@ revoke all on function public.start_group(text, text, text), public.request_join
   public.approve_join(uuid, uuid), public.remove_member(uuid), public.leave_group(), public.delete_group(),
   public.new_group_code(), public.set_item_status(uuid, boolean),
   public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami(),
+  public.delete_decision(text, int), public.restore_decision(uuid),
   public.link_items(text), public.unsubscribe(text) from public, anon;
 grant execute on function public.start_group(text, text, text), public.request_join(text, text), public.cancel_request(),
   public.approve_join(uuid, uuid), public.remove_member(uuid), public.leave_group(), public.delete_group(),
   public.new_group_code(), public.set_item_status(uuid, boolean),
-  public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami()
+  public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami(),
+  public.delete_decision(text, int), public.restore_decision(uuid)
   to authenticated;
 grant execute on function public.link_items(text), public.unsubscribe(text) to anon, authenticated;
 -- Internal helpers: only signed-in people (the permission rules call them), never signed-out visitors.
