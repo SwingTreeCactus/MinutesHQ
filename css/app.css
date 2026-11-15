@@ -311,6 +311,9 @@ dialog.preview:not([open]){display:none}
 .mtg{display:flex;height:100vh;height:100dvh;overflow:hidden}
 .rail{width:304px;flex:none;display:flex;flex-direction:column;padding:28px 14px 20px 22px;gap:20px;overflow:hidden}
 .rail .t{font-size:20px;font-weight:700;padding-left:8px}
+.rail .tbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;border:0;background:none;padding:0 8px;border-radius:12px;text-align:left;color:var(--ink)}
+.rail .tbtn span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail .tbtn svg{color:var(--teal)}
 .rail .meta{font-size:14px;color:var(--muted);padding-left:8px;margin-top:4px}
 .rail .meta a{color:var(--teal);font-weight:600;text-decoration:none}
 .conf{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;background:#E3E7ED;font-size:12px;font-weight:600;color:var(--ink2);margin:8px 0 0 8px}

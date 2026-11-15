@@ -112,7 +112,7 @@
     const m = M();
     const empty = m.phase === 'setup' && !m.items.length && !m.meta.title;
     if (intent === 'new' && m.phase === 'done') {
-      if (m.exported || confirm('Start a new meeting? The last meeting’s notes are cleared from this device. If you still need them, cancel and download the PDF or save a copy first.')) {
+      if (m.exported || confirm('Start a new meeting? The last meeting’s notes are cleared from this device. If you still need them, cancel and download the PDF first.')) {
         D.meeting = freshMeeting(); D.agendaDraft = '';
       }
     } else if (intent === 'new' && empty) { D.meeting = freshMeeting(); }
@@ -447,7 +447,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     const nextT = last ? '' : (m.items[m.cur + 1].title || 'next item');
     root.innerHTML = `<div class="mtg">
       <nav class="rail" aria-label="Agenda">
-        <div><div class="t">${esc(m.meta.title || 'Meeting')}</div>
+        <div><button class="t tbtn" id="mDetails" aria-label="Meeting details: ${esc(m.meta.title || 'Meeting')}"><span>${esc(m.meta.title || 'Meeting')}</span>${I('pen', 'i', 18)}</button>
           <div class="meta">${esc(A.fmtDate(m.meta.date))} · <span id="elapsed">${elapsed()}</span> · <a href="#" id="toAtt">${m.present.length} present</a></div>
           ${m.meta.confidential ? `<span class="conf">${I('lock', 'i', 12)}Confidential</span>` : ''}</div>
         <div class="agenda" id="agenda">${m.items.map((x, i) => {
@@ -527,6 +527,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
       go(Math.min(m.cur, m.items.length - 1));
     });
     on('end', endMeeting);
+    on('mDetails', detailsDialog);
     const ta = document.getElementById('toAtt'); if (ta) ta.onclick = e => { e.preventDefault(); m.phase = 'attendance'; save(); render(); };
     root.querySelectorAll('[data-cadd]').forEach(b => b.onclick = async () => {
       const k = +b.dataset.cadd, c = it.carry[k], inp = document.getElementById('cu' + k), body = inp.value.trim();
@@ -545,8 +546,46 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     });
   }
   function endMeeting() {
-    if (!confirm('End the meeting now? The end time will be recorded.')) return;
-    const m = M(); m.endedAt = new Date().toISOString(); m.phase = 'done'; save(); saveNow(); Live.end(); render(); syncTracker();
+    const m = M();
+    if (!confirm(m.endedAt ? `End the meeting again? The closing prayer time stays ${A.fmtTime(m.endedAt)}.` : 'End the meeting now? The end time will be recorded.')) return;
+    if (!m.endedAt) m.endedAt = new Date().toISOString();   // the first End meeting sets the time; ending again keeps it
+    m.phase = 'done'; save(); saveNow(); Live.end(); render(); syncTracker();
+  }
+
+  /* Meeting details: the setup card's fields, open from the meeting and the wrap-up. Saves as you type.
+     After ending, the closing prayer time (set by the first End meeting) can be corrected here. */
+  function detailsDialog() {
+    const m = M(), meta = m.meta, ended = m.phase === 'done' && m.endedAt;
+    const was = { title: meta.title, date: meta.date };
+    const hhmm = iso => { const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+    const fld = (id, key, label, type, ph) => `<div><label class="label" for="${id}">${label}</label><input class="input" id="${id}"${type ? ` type="${type}"` : ''} data-dm="${key}" value="${esc(meta[key] || '')}"${ph ? ` placeholder="${ph}"` : ''}></div>`;
+    dlg.innerHTML = `<h2>Meeting details</h2>
+      <div class="field">${fld('dTitle', 'title', 'Name', '', 'e.g. Board meeting')}</div>
+      <div class="grid2 field">
+        ${fld('dDate', 'date', 'Date', 'date')}${fld('dStart', 'startTime', 'Start time', 'time')}
+        ${fld('dOpen', 'openingPrayer', 'Opening prayer', '', 'Brother…')}${fld('dClose', 'closingPrayer', 'Closing prayer', '', 'Brother…')}
+        ${ended ? `<div><label class="label" for="dEnd">Closing prayer time</label><input class="input" type="time" id="dEnd" value="${hhmm(m.endedAt)}"></div>` : ''}
+      </div>
+      ${ended ? '<p class="note-s" style="margin:-6px 0 16px">Set when you first tapped End meeting. Going back and ending again keeps it.</p>' : ''}
+      <div class="field">${fld('dLoc', 'location', 'Location', '', 'Optional')}</div>
+      <button class="switch" role="switch" id="dConf" aria-checked="${!!meta.confidential}"><span class="track"></span>Confidential</button>
+      <div class="dlg-actions"><button class="btn primary" id="dDone">Done</button></div>`;
+    dlg.querySelectorAll('[data-dm]').forEach(el => el.addEventListener('input', () => { meta[el.dataset.dm] = el.value; save(); }));
+    const end = document.getElementById('dEnd');
+    if (end) end.addEventListener('input', () => {
+      const t = /^(\d{2}):(\d{2})$/.exec(end.value); if (!t) return;
+      const d = new Date(m.endedAt); d.setHours(+t[1], +t[2], 0, 0); m.endedAt = d.toISOString(); save();
+    });
+    on('dConf', () => { meta.confidential = !meta.confidential; document.getElementById('dConf').setAttribute('aria-checked', meta.confidential); save(); });
+    on('dDone', () => dlg.close());
+    dlg.onclose = () => {
+      dlg.onclose = null;
+      meta.title = (meta.title || '').trim();
+      saveNow(); render();
+      // the Decisions list header names the meeting and date: send again (never duplicates)
+      if (M().phase === 'done' && (meta.title !== was.title || meta.date !== was.date)) syncTracker();
+    };
+    dlg.showModal();
   }
 
   /* people picker: present first, then the rest of the group */
@@ -650,7 +689,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     root.innerHTML = `<div class="wrapup">
       <div class="backbar" style="padding-top:0"><a href="#" id="homeLink">${I('back')}Home</a></div>
       <div class="hd"><div><div class="eyebrow2">${esc(m.meta.title || 'Meeting')} · ${esc(A.fmtDate(m.meta.date))} · Start ${esc(m.meta.startTime ? A.fmtClock(m.meta.startTime) : A.fmtTime(m.startedAt))} · Closing prayer ${esc(A.fmtTime(m.endedAt))}</div><h1>Meeting ended</h1></div>
-        <button class="btn white" id="backMtg">Back to meeting</button></div>
+        <div class="row"><button class="btn white" id="wDetails">${I('pen', 'i', 18)}Details</button><button class="btn white" id="backMtg">Back to meeting</button></div></div>
       <div class="cols">
         <section class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0;font-size:18px">Sent to tracker</h2><span class="muted" style="font-size:14px">${fus.length} follow-up${fus.length === 1 ? '' : 's'}</span></div>
           ${status}
@@ -661,18 +700,17 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
           <button class="btn soft block" id="pdfPrev">Preview</button>
           <button class="btn primary block" id="pdf">${I('download')}Download PDF</button>
           ${smart() ? `<button class="btn soft block" id="pdfAI">${I('download')}Polished minutes PDF</button>` : ''}
-          <button class="btn block" id="saveFile">${I('save')}Save a copy</button>
           <button class="btn ghost danger block" id="newMtg">Start a new meeting</button></section>
       </div></div>`;
     on('homeLink', e => { e.preventDefault(); C.goHome(); });
-    on('backMtg', () => { m.phase = 'meeting'; m.endedAt = null; save(); render(); startLive(); });
+    on('backMtg', () => { m.phase = 'meeting'; save(); render(); startLive(); });
+    on('wDetails', detailsDialog);
     on('retry', syncTracker);
     on('pdf', () => exportPDF(false));
     on('pdfPrev', previewPDF);
     on('pdfAI', () => exportPDF(true));
-    on('saveFile', saveMeetingFile);
     on('newMtg', async () => {
-      if (!m.exported && !confirm('Start a new meeting? This clears the current one from this device. Download the PDF or save a copy first if you need it.')) return;
+      if (!m.exported && !confirm('Start a new meeting? This clears the current one from this device. Download the PDF first if you need it.')) return;
       D.meeting = freshMeeting(); D.agendaDraft = ''; pendingFile = null; await saveNow(); render(); window.scrollTo(0, 0);
     });
     root.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { const it = m.items.find(x => x.id === b.dataset.pick); pickPeople(it.assignees, ids => { it.assignees = ids; save(); syncTracker(); }); });
@@ -767,13 +805,6 @@ ${JSON.stringify({ meeting: m.meta.title, items: payload })}` }], 'You turn raw 
   }
 
   /* ---------- meeting files ---------- */
-  async function saveMeetingFile() {
-    const m = M();
-    const box = Vault.exportFile({ meeting: m, cache: D.cache });
-    const name = ((m.meta.date || A.todayISO()) + ' ' + (m.meta.title || 'meeting')).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '.minutes.json';
-    m.exported = true; save();
-    A.shareOrDownload(new Blob([JSON.stringify(box)], { type: 'application/json' }), name, 'application/json');
-  }
   document.getElementById('openFile').onchange = async e => {
     const f = e.target.files[0]; e.target.value = ''; if (!f || !D) return;
     try {
