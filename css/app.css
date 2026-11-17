@@ -69,6 +69,7 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stro
 .switch[aria-checked="true"] .track{background:var(--teal)}
 .switch[aria-checked="true"] .track::after{left:23px}
 .switch.wide{display:flex;width:100%;justify-content:space-between}
+.switch.settling .track,.switch.settling .track::after{transition:none}
 
 /* person chips in a field */
 .people-field{min-height:52px;border-radius:12px;background:#fff;padding:6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}

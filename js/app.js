@@ -47,7 +47,7 @@
   const accountFoot = () => `<div class="bottom">Signed in as ${esc(S.me.email)}<button class="btn link" id="gOut">Use a different account</button></div>`;
   async function signOutNow() {
     Live.leave(); Meeting.close();
-    if (isAdmin()) await turnPushOff().catch(() => {});   // a signed-out device stops getting join request alerts
+    if (isAdmin()) { await turnPushOff().catch(() => {}); rememberPush(false); }   // a signed-out device stops getting join request alerts
     await A.signOut(); S.me = null; location.hash = ''; start();
   }
 
@@ -663,20 +663,26 @@
     const { error } = await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
     if (error) throw error;
   }
+  const pushKey = () => 'mt_push:' + (S.me && S.me.uid);
+  const pushRemembered = () => { try { return localStorage.getItem(pushKey()) === '1'; } catch (e) { return false; } };
+  const rememberPush = v => { try { localStorage.setItem(pushKey(), v ? '1' : '0'); } catch (e) {} };
   function pushCard() {
     const why = iosBrowser() ? 'On iPhone or iPad, open Minutes HQ from its Home Screen icon to turn this on.'
       : !pushReady() ? 'This browser can’t show notifications.' : '';
     return `<div class="card">
-      <button class="switch wide" role="switch" id="pushSw" aria-checked="false" ${why || !S.loaded ? 'disabled' : ''}>Join request alerts<span class="track"></span></button>
+      <button class="switch wide settling" role="switch" id="pushSw" aria-checked="${!why && pushRemembered()}" ${why || !S.loaded ? 'disabled' : ''}>Join request alerts<span class="track"></span></button>
       <p>${why || 'A notification on this device when someone asks to join. It doesn’t say who.'}</p></div>`;
   }
   function wirePush() {
-    const b = document.getElementById('pushSw'); if (!b || b.disabled) return;
-    pushIsOn().then(v => b.setAttribute('aria-checked', v)).catch(() => {});
+    const b = document.getElementById('pushSw'); if (!b) return;
+    // opens in the remembered position without animating; a quiet check corrects it if the device changed
+    const settle = () => requestAnimationFrame(() => requestAnimationFrame(() => b.classList.remove('settling')));
+    if (b.disabled) return settle();
+    pushIsOn().then(v => { rememberPush(v); b.setAttribute('aria-checked', v); }).catch(() => {}).finally(settle);
     b.onclick = async () => {
       const v = b.getAttribute('aria-checked') !== 'true';
       b.disabled = true;
-      try { await (v ? turnPushOn() : turnPushOff()); b.setAttribute('aria-checked', v); A.toast(v ? 'Join request alerts on for this device' : 'Join request alerts off for this device'); }
+      try { await (v ? turnPushOn() : turnPushOff()); rememberPush(v); b.setAttribute('aria-checked', v); A.toast(v ? 'Join request alerts on for this device' : 'Join request alerts off for this device'); }
       catch (e) { A.toast(e.message || 'Couldn’t change alerts'); }
       b.disabled = false;
     };
