@@ -165,7 +165,7 @@
           </section>
           <section class="card">
             <h2>Meeting</h2>
-            <div class="field"><label class="label" for="mTitle">Name</label><input class="input" id="mTitle" data-meta="title" value="${esc(meta.title)}" placeholder="e.g. Board meeting"></div>
+            <div class="field"><label class="label" for="mTitle">Name</label><input class="input" id="mTitle" data-meta="title" value="${esc(meta.title)}" placeholder="e.g. Monthly meeting"></div>
             <div class="grid2 field">
               <div><label class="label" for="mDate">Date</label><input class="input" type="date" id="mDate" data-meta="date" value="${esc(meta.date)}"></div>
               <div><label class="label" for="mStart">Start time</label><input class="input" type="time" id="mStart" data-meta="startTime" value="${esc(meta.startTime || '')}"></div>
@@ -560,7 +560,7 @@ ${txt ? 'Agenda text:\n' + txt : 'The agenda is in the attached file.'}` });
     const hhmm = iso => { const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
     const fld = (id, key, label, type, ph) => `<div><label class="label" for="${id}">${label}</label><input class="input" id="${id}"${type ? ` type="${type}"` : ''} data-dm="${key}" value="${esc(meta[key] || '')}"${ph ? ` placeholder="${ph}"` : ''}></div>`;
     dlg.innerHTML = `<h2>Meeting details</h2>
-      <div class="field">${fld('dTitle', 'title', 'Name', '', 'e.g. Board meeting')}</div>
+      <div class="field">${fld('dTitle', 'title', 'Name', '', 'e.g. Monthly meeting')}</div>
       <div class="grid2 field">
         ${fld('dDate', 'date', 'Date', 'date')}${fld('dStart', 'startTime', 'Start time', 'time')}
         ${fld('dOpen', 'openingPrayer', 'Opening prayer', '', 'Brother…')}${fld('dClose', 'closingPrayer', 'Closing prayer', '', 'Brother…')}

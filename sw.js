@@ -1,7 +1,7 @@
 /* Lets the app open without a connection (for example, a meeting room with no wifi).
    App files: try the network first so updates show up, fall back to the saved copy.
    Libraries from the CDN: saved copy first. Database and Anthropic calls are never cached. */
-const CACHE = 'minutes-hq-v5';
+const CACHE = 'minutes-hq-v6';
 const SHELL = [
   './', 'index.html', 'my.html', 'privacy.html', 'terms.html', 'css/app.css',
   'js/config.js', 'js/common.js', 'js/icons.js', 'js/vault.js', 'js/pdf.js', 'js/live.js', 'js/meeting.js', 'js/app.js', 'js/my.js',
@@ -31,4 +31,25 @@ self.addEventListener('fetch', e => {
     if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match('index.html'))));
+});
+
+/* Join request alerts (admins turn them on per device in Settings). The text is vague on purpose:
+   it can show on a lock screen, so it never names who asked. */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) {}
+  const url = new URL(d.url || './#people', self.registration.scope).href;
+  e.waitUntil(self.registration.showNotification(d.title || 'Minutes HQ', {
+    body: d.body || 'Someone asked to join your group. Tap to approve or decline.',
+    icon: 'icons/app-192.png', badge: 'icons/app-192.png', tag: d.tag || 'join', renotify: true, data: { url }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || new URL('./#people', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const open = list.find(c => c.url.startsWith(self.registration.scope));
+    if (open) return open.focus().then(c => (c || open).navigate ? (c || open).navigate(url) : null).catch(() => self.clients.openWindow(url));
+    return self.clients.openWindow(url);
+  }));
 });

@@ -1,6 +1,8 @@
-// Edge Function "notify": reminder emails, join-request emails, one-click unsubscribe.
+// Edge Function "notify": reminder emails, join-request emails and alerts, one-click unsubscribe.
 // Deploy with JWT verification OFF (it checks its own callers). Secrets it reads:
-//   RESEND_API_KEY  – from resend.com
+//   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY – sign join request alerts (the public one is also in js/config.js)
+//   VAPID_SUBJECT   – optional contact for push services ("mailto:…" or a web address); defaults to APP_URL
+//   RESEND_API_KEY  – from resend.com (until it's set, no emails go out; alerts still do)
 //   MAIL_FROM       – e.g. "Minutes HQ <reminders@notify.mygroundwork.app>"
 //   APP_URL         – e.g. "https://hq.mygroundwork.app/"
 //   CRON_SECRET     – any long random string; the hourly schedule sends it
@@ -11,6 +13,7 @@
 //   the app          POST {"type":"join"} with the user's sign-in → emails the group's admins about new requests
 //   mail apps        POST ?unsub=TOKEN (List-Unsubscribe-Post) → turns that person's emails off
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import webpush from 'npm:web-push@3.6.7';
 
 const env = (k: string) => Deno.env.get(k) ?? '';
 const SUPABASE_URL = env('SUPABASE_URL');
@@ -18,6 +21,12 @@ const db = createClient(SUPABASE_URL, env('SUPABASE_SERVICE_ROLE_KEY'), { auth: 
 const APP_URL = env('APP_URL').replace(/\/?$/, '/');
 const FN_URL = SUPABASE_URL + '/functions/v1/notify';
 const LINK_DAYS = 30;
+const MAIL_READY = !!env('RESEND_API_KEY');
+const PUSH_READY = !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY'));
+if (PUSH_READY) {
+  try { webpush.setVapidDetails(env('VAPID_SUBJECT') || (/^https:\/\//.test(APP_URL) ? APP_URL : 'https://hq.mygroundwork.app/'), env('VAPID_PUBLIC_KEY'), env('VAPID_PRIVATE_KEY')); }
+  catch (e) { console.error('VAPID keys not usable', (e as Error).message); }
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -134,8 +143,11 @@ function reminderEmail(o: { name: string; group: string; code: string; onApp: bo
 
 /* ---------------- join requests ---------------- */
 
+// Vague on purpose: it can show on a lock screen, so it never says who asked or names the group.
+const JOIN_ALERT = JSON.stringify({ title: 'Minutes HQ', body: 'Someone asked to join your group. Tap to approve or decline.', url: APP_URL + '#people', tag: 'join' });
+
 async function notifyJoins() {
-  let sent = 0;
+  let sent = 0, alerts = 0;
   const { data: reqs } = await db.from('join_requests').select('id,group_id').is('notified_at', null);
   for (const r of reqs ?? []) {
     // claim it first so two runs never email twice
@@ -146,6 +158,8 @@ async function notifyJoins() {
       db.from('groups').select('name').eq('id', r.group_id).single(),
       db.from('people').select('id,person_private(email,reminders,unsub_token)').eq('group_id', r.group_id).eq('is_admin', true),
     ]);
+    alerts += await alertDevices((admins ?? []).map((a) => a.id));
+    if (!MAIL_READY) continue;
     for (const a of admins ?? []) {
       const pp = one(a.person_private as unknown as { email: string | null; reminders: boolean; unsub_token: string });
       if (!pp?.email || pp.reminders === false) continue;
@@ -158,7 +172,25 @@ async function notifyJoins() {
       sent++;
     }
   }
-  return sent;
+  return { emails: sent, alerts };
+}
+
+// Push to every device the admins turned on in Settings. Devices the push service says are gone are forgotten.
+async function alertDevices(personIds: string[]) {
+  if (!PUSH_READY || !personIds.length) return 0;
+  const { data: subs } = await db.from('push_subscriptions').select('id,endpoint,p256dh,auth').in('person_id', personIds);
+  let n = 0;
+  for (const s of subs ?? []) {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JOIN_ALERT, { TTL: 86400, urgency: 'high' });
+      n++;
+    } catch (e) {
+      const code = (e as { statusCode?: number }).statusCode;
+      if (code === 404 || code === 410) await db.from('push_subscriptions').delete().eq('id', s.id);
+      else console.error('Push error', code, (e as Error).message);
+    }
+  }
+  return n;
 }
 
 /* ---------------- sending ---------------- */
@@ -168,6 +200,7 @@ function page(inner: string) {
   return `<div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1C2430;max-width:520px">${inner}</div>`;
 }
 async function sendMail(to: string, unsubToken: string, m: { subject: string; text: string; html: string }) {
+  if (!MAIL_READY) return;
   const off = APP_URL + 'my.html#u=' + unsubToken;
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',

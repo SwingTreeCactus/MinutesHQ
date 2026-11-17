@@ -156,6 +156,13 @@ dialog.preview:not([open]){display:none}
 .live-card .nm{font-size:16px;font-weight:700}
 .live-card .by{font-size:13px;color:var(--ink2)}
 .live-card .go{height:44px;padding:0 16px;border-radius:12px;background:#fff;color:var(--teal-dk);font-size:15px;font-weight:600;display:flex;align-items:center;flex:none}
+.req-banner{display:flex;align-items:center;gap:12px;background:var(--amber-soft);box-shadow:inset 0 0 0 1px var(--amber-line);border-radius:18px;padding:14px 14px 14px 16px;margin:12px 0 4px;text-decoration:none;color:var(--ink)}
+.req-banner .ic{color:var(--amber);display:flex;flex:none}
+.req-banner .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.req-banner .nm{font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.req-banner .by{font-size:13px;color:var(--amber);font-weight:600}
+.req-banner .go{height:44px;padding:0 16px;border-radius:12px;background:#fff;color:var(--teal-dk);font-size:15px;font-weight:600;display:flex;align-items:center;flex:none}
+.home-l .req-banner{margin:0}
 
 /* decisions */
 .dec{background:#fff;border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow);margin-bottom:10px}

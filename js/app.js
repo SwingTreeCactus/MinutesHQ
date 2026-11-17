@@ -45,7 +45,11 @@
     on('gRetry', () => start());
   }
   const accountFoot = () => `<div class="bottom">Signed in as ${esc(S.me.email)}<button class="btn link" id="gOut">Use a different account</button></div>`;
-  async function signOutNow() { Live.leave(); Meeting.close(); await A.signOut(); S.me = null; location.hash = ''; start(); }
+  async function signOutNow() {
+    Live.leave(); Meeting.close();
+    if (isAdmin()) await turnPushOff().catch(() => {});   // a signed-out device stops getting join request alerts
+    await A.signOut(); S.me = null; location.hash = ''; start();
+  }
 
   function renderJoin(err) {
     stopTimers();
@@ -82,7 +86,7 @@
     root.innerHTML = `<div class="form-page">
       <div><h1>Start a group</h1><p class="lead">You’ll be its admin. Others join with a code you share, and you approve them.</p></div>
       <form class="card" id="startForm">
-        <div><label class="label" for="sgName">Group name</label><input class="input" id="sgName" placeholder="e.g. Board" required maxlength="80"></div>
+        <div><label class="label" for="sgName">Group name</label><input class="input" id="sgName" required maxlength="80"></div>
         <div><label class="label" for="sgMe">Your name as the group knows you</label><input class="input" id="sgMe" value="${esc(sessionName())}" required maxlength="80"></div>
         ${typeof err === 'string' ? `<div class="amber-text" role="alert">${esc(err)}</div>` : ''}
         <button class="btn primary block" type="submit">Start group</button>
@@ -214,9 +218,21 @@
     return `<a class="live-card" href="#live/${l.id}"><span class="tx"><span class="live-dot">Live now</span><span class="nm">${esc(l.meeting_title)}</span><span class="by">${esc(l.taker_name)} taking notes</span></span><span class="go">Follow along</span></a>`;
   }
 
+  /* Admins: a banner while join requests wait. It names the person (only shown inside the app). */
+  function reqBanner() {
+    if (!isAdmin() || !S.requests.length) return '';
+    const n = S.requests.length, first = S.requests[0];   // oldest first
+    const d = new Date(first.created_at);
+    const since = d.toDateString() === new Date().toDateString() ? A.fmtTime(first.created_at) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<a class="req-banner" href="#people"><span class="ic">${I('people', 'i', 22)}</span>
+      <span class="tx"><span class="nm">${n === 1 ? esc(first.full_name) + ' asked to join' : n + ' people asked to join'}</span><span class="by">Waiting since ${esc(since)}</span></span>
+      <span class="go">Review</span></a>`;
+  }
+
   function renderPhoneHome() {
     const t = curTab();
     root.innerHTML = `<div class="wrap"><div class="tabs-bar">${segHTML()}</div>
+      ${reqBanner()}
       ${t === 'todo' ? liveNow().map(liveCardSmall).join('') : ''}
       <div id="pane"></div></div>`;
     wireSeg();
@@ -235,6 +251,7 @@
         <a class="hbtn" href="#settings" aria-label="Settings"><span class="avatar">${esc(A.initials(p.name))}</span>${esc(p.name)}</a></div>
       <div class="home-g">
         <div class="home-l">
+          ${reqBanner()}
           <section class="card meet-card"><h2>Meetings</h2>
             <button class="btn primary lg" id="startMtg">${label}</button>
             ${mk && mk.phase === 'done' ? `<button class="btn link" id="lastWrap" style="align-self:flex-start;padding:0">Last meeting’s wrap-up</button>` : ''}</section>
@@ -591,6 +608,7 @@
           <button class="switch wide" role="switch" id="remSw" aria-checked="${rem}" ${S.loaded ? '' : 'disabled'}>Email reminders<span class="track"></span></button>
           <p>One email at 7 AM when something of yours is due tomorrow or today, and a Monday note listing anything overdue. ${mine.email ? 'Sent to ' + esc(mine.email) + '.' : 'No email address on file.'}</p>
         </div>
+        ${isAdmin() ? pushCard() : ''}
         <div class="bottom-actions" style="margin-top:8px">
           ${isAdmin() && sole ? `<button class="btn white danger block" id="delGroup">Delete group</button>` : `<button class="btn white block" id="leave">Leave group</button>`}
           <button class="btn white danger block" id="signOut">${I('signout')}Sign out</button>
@@ -604,6 +622,7 @@
       (S.contacts[p.id] = S.contacts[p.id] || {}).reminders = v;
       A.toast(v ? 'Reminders on' : 'Reminders off');
     });
+    if (isAdmin()) wirePush();
     on('leave', async () => {
       if (!confirm(`Leave ${g.name}? You’ll stay on its list as a name, so past items keep your name.`)) return;
       const { error } = await sb.rpc('leave_group'); if (error) return A.toast(error.message);
@@ -615,6 +634,52 @@
       Meeting.close(); location.hash = ''; start();
     });
     on('signOut', signOutNow);
+  }
+
+  /* ================= join request alerts (admins, one switch per device) ================= */
+  const VAPID = (window.APP_CONFIG || {}).VAPID_PUBLIC_KEY || '';
+  const iosBrowser = () => navigator.standalone === false;   // Safari on iPhone/iPad, not opened from the Home Screen
+  const pushReady = () => !!(VAPID && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  const swReg = () => Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error('This device isn’t ready for notifications yet. Reopen the app and try again.')), 5000))]);
+  async function deviceSub() { if (!pushReady()) return null; try { return await (await swReg()).pushManager.getSubscription(); } catch (e) { return null; } }
+  async function pushIsOn() {   // this device is saved for the signed-in admin
+    if (!pushReady() || Notification.permission !== 'granted') return false;
+    const sub = await deviceSub(); if (!sub) return false;
+    const { data } = await sb.from('push_subscriptions').select('id').eq('endpoint', sub.endpoint);
+    return !!(data && data.length);
+  }
+  const b64u = s => Uint8Array.from(atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  async function turnPushOn() {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error('Notifications are blocked for this app. Allow them in the browser’s site settings, then try again.');
+    const reg = await swReg();
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) });
+    const j = sub.toJSON();
+    const { error } = await sb.rpc('save_push', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+    if (error) throw error;
+  }
+  async function turnPushOff() {
+    const sub = await deviceSub(); if (!sub) return;
+    const { error } = await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+    if (error) throw error;
+  }
+  function pushCard() {
+    const why = iosBrowser() ? 'On iPhone or iPad, open Minutes HQ from its Home Screen icon to turn this on.'
+      : !pushReady() ? 'This browser can’t show notifications.' : '';
+    return `<div class="card">
+      <button class="switch wide" role="switch" id="pushSw" aria-checked="false" ${why || !S.loaded ? 'disabled' : ''}>Join request alerts<span class="track"></span></button>
+      <p>${why || 'A notification on this device when someone asks to join. It doesn’t say who.'}</p></div>`;
+  }
+  function wirePush() {
+    const b = document.getElementById('pushSw'); if (!b || b.disabled) return;
+    pushIsOn().then(v => b.setAttribute('aria-checked', v)).catch(() => {});
+    b.onclick = async () => {
+      const v = b.getAttribute('aria-checked') !== 'true';
+      b.disabled = true;
+      try { await (v ? turnPushOn() : turnPushOff()); b.setAttribute('aria-checked', v); A.toast(v ? 'Join request alerts on for this device' : 'Join request alerts off for this device'); }
+      catch (e) { A.toast(e.message || 'Couldn’t change alerts'); }
+      b.disabled = false;
+    };
   }
 
   /* ================= people and join requests (admins) ================= */

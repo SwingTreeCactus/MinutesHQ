@@ -11,7 +11,7 @@ create extension if not exists pg_trgm  with schema extensions;   -- fuzzy name 
 -- Tables
 -- ============================================================
 
--- A group (e.g. "Board"). Everyone belongs to exactly one.
+-- A group. Everyone belongs to exactly one.
 create table public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(trim(name)) between 1 and 80),
@@ -138,6 +138,19 @@ create table public.live_meetings (
   last_seen_at timestamptz not null default now()
 );
 
+-- Devices that show a notification when someone asks to join (an admin turns it on per device in Settings).
+-- One row per device: if another admin turns it on on the same device, the device moves to them.
+-- Written only by save_push(); each admin sees and deletes only their own.
+create table public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  person_id uuid not null references public.people(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+create index push_subscriptions_person_idx on public.push_subscriptions (person_id);
+
 -- Private read-only links in reminder emails. Only a hash of each token is stored.
 create table public.link_tokens (
   token_hash text primary key,
@@ -213,6 +226,7 @@ alter table public.decision_lists  enable row level security;
 alter table public.decision_deletions enable row level security;
 alter table public.agenda_notes    enable row level security;
 alter table public.live_meetings   enable row level security;
+alter table public.push_subscriptions enable row level security;
 alter table public.link_tokens     enable row level security;   -- no policies: server-only
 alter table public.reminder_sends  enable row level security;   -- no policies: server-only
 
@@ -233,6 +247,7 @@ revoke insert, update on public.join_requests from authenticated;
 revoke insert, update, delete on public.decision_lists from authenticated;
 revoke insert, update, delete on public.decision_deletions from authenticated;
 revoke all on public.link_tokens, public.reminder_sends from authenticated;
+revoke insert, update on public.push_subscriptions from authenticated;
 
 -- Groups: members see their own group; admins can rename it.
 create policy groups_read on public.groups for select to authenticated using (id = public.my_group());
@@ -300,6 +315,10 @@ create policy live_read on public.live_meetings for select to authenticated usin
 create policy live_own on public.live_meetings for all to authenticated
   using (person_id = public.me_id())
   with check (person_id = public.me_id() and public.is_group_admin(group_id));
+
+-- Join request alerts: each admin sees and turns off only their own devices.
+create policy push_own_read on public.push_subscriptions for select to authenticated using (person_id = public.me_id());
+create policy push_own_delete on public.push_subscriptions for delete to authenticated using (person_id = public.me_id());
 
 -- ============================================================
 -- Functions the app calls
@@ -442,6 +461,7 @@ begin
   update public.people set user_id = null where id = t.id;
   delete from public.agenda_notes where person_id = t.id;
   delete from public.live_meetings where person_id = t.id;
+  delete from public.push_subscriptions where person_id = t.id;
 end $$;
 
 -- Leave your group (you stay on its list as a name-only person).
@@ -461,6 +481,7 @@ begin
   update public.people set user_id = null where id = me.id;
   delete from public.agenda_notes where person_id = me.id;
   delete from public.live_meetings where person_id = me.id;
+  delete from public.push_subscriptions where person_id = me.id;
 end $$;
 
 -- Delete the whole group: only when you're its only app user.
@@ -569,6 +590,22 @@ begin
   delete from public.decision_deletions where id = d.id;
 end $$;
 
+-- Turn on join request alerts on this device (admins). The device's browser gives the endpoint and keys.
+-- A device already saved for someone else moves to whoever turned it on last.
+create or replace function public.save_push(p_endpoint text, p_p256dh text, p_auth text) returns void
+language plpgsql security definer set search_path = public as $$
+declare me public.people;
+begin
+  select * into me from public.people where user_id = auth.uid();
+  if me.id is null or not me.is_admin then raise exception 'Only admins get join request alerts'; end if;
+  if coalesce(p_endpoint, '') !~ '^https://' or length(p_endpoint) > 1000
+     or length(coalesce(p_p256dh, '')) not between 1 and 200 or length(coalesce(p_auth, '')) not between 1 and 100 then
+    raise exception 'That device can''t get notifications';
+  end if;
+  insert into public.push_subscriptions (person_id, endpoint, p256dh, auth) values (me.id, p_endpoint, p_p256dh, p_auth)
+  on conflict (endpoint) do update set person_id = excluded.person_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+end $$;
+
 -- An admin can cancel someone's private links (the next reminder email carries a new one).
 create or replace function public.reset_link(p_person uuid) returns void
 language plpgsql security definer set search_path = public as $$
@@ -615,13 +652,13 @@ revoke all on function public.start_group(text, text, text), public.request_join
   public.approve_join(uuid, uuid), public.remove_member(uuid), public.leave_group(), public.delete_group(),
   public.new_group_code(), public.set_item_status(uuid, boolean),
   public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami(),
-  public.delete_decision(text, int), public.restore_decision(uuid),
+  public.delete_decision(text, int), public.restore_decision(uuid), public.save_push(text, text, text),
   public.link_items(text), public.unsubscribe(text) from public, anon;
 grant execute on function public.start_group(text, text, text), public.request_join(text, text), public.cancel_request(),
   public.approve_join(uuid, uuid), public.remove_member(uuid), public.leave_group(), public.delete_group(),
   public.new_group_code(), public.set_item_status(uuid, boolean),
   public.publish_decisions(text, text, date, timestamptz, jsonb), public.reset_link(uuid), public.whoami(),
-  public.delete_decision(text, int), public.restore_decision(uuid)
+  public.delete_decision(text, int), public.restore_decision(uuid), public.save_push(text, text, text)
   to authenticated;
 grant execute on function public.link_items(text), public.unsubscribe(text) to anon, authenticated;
 -- Internal helpers: only signed-in people (the permission rules call them), never signed-out visitors.

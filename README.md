@@ -9,7 +9,7 @@ One web app at one address (for example `https://hq.mygroundwork.app`), used two
 
 Anyone can start a group and becomes its admin. Others join with the group's code and an admin approves them. Each person belongs to one group, and the database keeps every group's data apart.
 
-Setup takes about an hour, once. You need a GitHub account, a Supabase account (free), and a Google account. Email reminders (optional, step 6) also need a free Resend account and access to your domain's DNS (Cloudflare).
+Setup takes about an hour, once. You need a GitHub account, a Supabase account (free), and a Google account. Email reminders (optional, step 7) also need a free Resend account and access to your domain's DNS (Cloudflare).
 
 ---
 
@@ -65,7 +65,7 @@ If a run fails (for example, the project was already paused), GitHub emails you.
 ## 5. Start your group
 
 1. On the tablet, open your app address in Chrome and sign in with Google.
-2. Tap **Start a group**, name it (e.g. "Board") and enter your name as the group knows you. You're its admin.
+2. Tap **Start a group**, name it and enter your name as the group knows you. You're its admin.
 3. Tap **People → Add name** for everyone who comes to meetings. Add an email for anyone who won't use the app but should get reminders.
 4. Tap **Share** next to the group code and send it to members. When they ask to join, you'll see them under **People**: check the suggested name, then **Approve**.
 5. Chrome menu (⋮) → **Add to Home screen** (or **Install app**). Open it from the home screen from now on.
@@ -74,7 +74,19 @@ If a run fails (for example, the project was already paused), GitHub emails you.
 
 Other admins: open a member's row under **People** and tick **Admin**. A group can have several. The last admin can't step down or leave until someone else is an admin.
 
-## 6. Email reminders (optional)
+## 6. Join request alerts
+
+Admins can get a notification on their phone or tablet when someone asks to join (**Settings → Join request alerts**, one switch per device). It says only "Someone asked to join your group"; tapping it opens People. These go out through the same `notify` function as the emails, but don't need Resend.
+
+1. **Database:** if your database was set up before Nov 17, run the "Join request alerts" migration (the `push_subscriptions` table and `save_push` function from `supabase/schema.sql`). A new database gets them from step 2.
+2. **Edge Functions → Deploy a new function → Via editor**: name `notify`, paste all of `supabase/functions/notify/index.ts`, deploy, and turn **off "Verify JWT"**.
+3. **Edge Functions → Secrets**, add `VAPID_PUBLIC_KEY` (the same value as in `js/config.js`), `VAPID_PRIVATE_KEY` (its private half, kept only here) and `APP_URL` = `https://hq.mygroundwork.app/`.
+
+To make a new key pair, run `npx web-push generate-vapid-keys`, put the public key in `js/config.js` and both in the secrets. Devices that had alerts on must turn them on again afterwards.
+
+iPhone and iPad get alerts only in the Home Screen app (iOS 16.4 or later), not in Safari.
+
+## 7. Email reminders (optional)
 
 Reminders go out at 7 AM in the group's time zone when something of yours is due today or tomorrow, plus a Monday note of overdue items. Emails never contain item titles. Each carries a private read-only link (good for 30 days) and a one-click unsubscribe. Admins are also emailed when someone asks to join.
 
@@ -87,7 +99,7 @@ Reminders go out at 7 AM in the group's time zone when something of yours is due
 
 **Supabase:**
 
-1. **Edge Functions → Deploy a new function → Via editor**. Name it `notify`, paste all of `supabase/functions/notify/index.ts`, deploy. In the function's settings, turn **off "Verify JWT"** (the function checks its own callers; mail apps need to reach it for one-click unsubscribe).
+1. If you haven't already (step 6): **Edge Functions → Deploy a new function → Via editor**. Name it `notify`, paste all of `supabase/functions/notify/index.ts`, deploy. In the function's settings, turn **off "Verify JWT"** (the function checks its own callers; mail apps need to reach it for one-click unsubscribe).
 2. **Edge Functions → Secrets**, add:
    - `RESEND_API_KEY` = the key from Resend
    - `MAIL_FROM` = `Minutes HQ <reminders@notify.mygroundwork.app>`
@@ -107,7 +119,7 @@ $$);
 
 It runs every hour and sends only during the 7 o'clock hour in each group's time zone (set from the device of whoever started the group). To test straight away, run the `net.http_post(...)` part once with body `'{"type": "cron", "force": true}'`; anyone with items due today or tomorrow gets their email (still at most one a day).
 
-## 7. Members
+## 8. Members
 
 Send members the app address (or use **Share** on the People screen, which includes the code). Tell them:
 
@@ -120,13 +132,13 @@ They'll see "Waiting for approval" until an admin approves them.
 
 ## Using it
 
-**Admin home (tablet):** the group name, **People** (with any join requests), and your account. **Start a meeting** is the one main button; it reads **Continue … meeting** while one is underway on this tablet. When another admin is running a meeting, a **Live now** card lets you **Follow along** (members get the same card above their to-do list). On the right: **To-do | Decisions | Next agenda**.
+**Admin home (tablet):** the group name, **People** (with any join requests), and your account. While someone is waiting to join, a banner on the home screen (phone and tablet) says who, with **Review**. **Start a meeting** is the one main button; it reads **Continue … meeting** while one is underway on this tablet. When another admin is running a meeting, a **Live now** card lets you **Follow along** (members get the same card above their to-do list). On the right: **To-do | Decisions | Next agenda**.
 
 **Before the meeting:** paste or load the agenda and tap **Read agenda**, or add items by hand. The start time and the opening- and closing-prayer brothers are picked up when the agenda lists them. **Add open action items** puts everything still open into the agenda as item 2. **Confidential** keeps that meeting's agenda and notes on the tablet (nothing is sent out for reading or polishing). Then **Next: who's here**.
 
 **During the meeting:** tap who's present (**Add name** puts someone new on the group's list and marks them present), then work through the agenda. Each item has Notes, a Decision, and **Needs follow-up** (task, people, due date). You can jump around, reorder, add and remove items. Everyone in the group can follow along read-only from the Live now card; they browse on their own and never see which item you're on. Notes reach them directly and are never stored on the server.
 
-**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). **Preview** shows the PDF pages before you download, and lets you switch between three styles (Modern, Classic, Plain); the choice is remembered and can also be set in Settings → **Minutes style**. Download the PDF or save a copy.
+**After the meeting:** follow-ups go to the to-do list automatically (anything without a person waits for **Pick someone**). The meeting's decisions replace the group's **Decisions** list (a meeting with no decisions leaves the old list). Ending again after changes never duplicates items, keeps any edits made in the to-do list since, and won't delete an item that already has updates (it tells you instead). **Preview** shows the PDF pages before you download, and lets you switch between three styles (Modern, Classic, Plain); the choice is remembered and can also be set in Settings → **Minutes style**. Download the PDF.
 
 **Decisions (admins):** swipe a decision left and tap **Delete** to take it off the list (Undo appears for a few seconds). **Settings → Deleted decisions** shows what was deleted, by whom and when, with **Restore** while that meeting's list is still current. Ending the meeting again doesn't bring a deleted decision back.
 
@@ -164,6 +176,6 @@ sw.js                      Offline support
 manifest.webmanifest       Home-screen install settings
 icons/                     App icons
 supabase/schema.sql        Database tables and permissions (run once)
-supabase/functions/notify/ Email reminders (optional)
+supabase/functions/notify/ Join request alerts, and email reminders (optional)
 .github/workflows/keep-awake.yml  Keeps the free database from pausing
 ```
